@@ -119,6 +119,11 @@ pub const PACK_ICON_SIZE: u32 = 128;
 /// Atlas slots for armour trim textures made at run time (`trims`), each the
 /// size of the largest trim texture.
 pub const TRIM_SLOTS: usize = 32;
+/// The atlas slot native mods paint at run time (`native_canvas_upload`):
+/// their own images, shapes and text, drawn with `native_sprite`.
+pub const MOD_CANVAS_SPRITE: &str = "horizon/mod-canvas";
+/// The mod canvas's size in pixels.
+pub const MOD_CANVAS_SIZE: (u32, u32) = (2048, 1024);
 pub fn decode(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
     decode_bytes(&fs::read(path)?)
 }
@@ -553,6 +558,13 @@ impl HudAtlas {
                 vec![0; side * side * 4],
             ));
         }
+        // Native mods' own images (`native_canvas_upload`), blank until they paint.
+        images.push((
+            MOD_CANVAS_SPRITE.into(),
+            MOD_CANVAS_SIZE.0,
+            MOD_CANVAS_SIZE.1,
+            vec![0; (MOD_CANVAS_SIZE.0 * MOD_CANVAS_SIZE.1 * 4) as usize],
+        ));
         // The on-screen keyboard's text and corner masks (ui_theme), rasterized at run time.
         images.push((
             "horizon/ui-text".into(),

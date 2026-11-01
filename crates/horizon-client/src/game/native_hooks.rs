@@ -1082,6 +1082,38 @@ pub struct NativeScreenView<'a> {
     pub partial_tick: f32,
 }
 
+/// Input as the overlay hears it first (`native_overlay_input`): positions in
+/// GUI pixels from the window's top left, buttons in GLFW's numbering (0
+/// left, 1 right, 2 middle), keys by the game's own names
+/// (`key.keyboard.right.shift`), modifiers in GLFW's bits (shift 1,
+/// control 2, alt 4, super 8).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum NativeInput<'a> {
+    Move {
+        at: [f32; 2],
+    },
+    Button {
+        button: i32,
+        pressed: bool,
+        at: [f32; 2],
+        modifiers: u32,
+    },
+    Scroll {
+        dx: f32,
+        dy: f32,
+        at: [f32; 2],
+    },
+    Key {
+        name: &'a str,
+        pressed: bool,
+        repeat: bool,
+        modifiers: u32,
+    },
+    Text {
+        text: &'a str,
+    },
+}
+
 /// The mod screen open on this client: the block it is for, the key its
 /// slots are under, the window id of its menu, and the menu's data slots as
 /// the server sent them.
@@ -2372,6 +2404,37 @@ impl Game<'_> {
         screen: &NativeScreenView<'_>,
     ) {
         let _ = (batch, screen);
+    }
+    /// Whether a mod draws `screen` itself (`native_ui_screen`'s ids:
+    /// `title` for the title screen's main page, `paused`, `mod`...), asked
+    /// once a frame before it's drawn. Set `claimed` and Horizon draws
+    /// nothing of it: no buttons, no splash, no logo (the world behind an
+    /// in-game screen and its blur still draw). Input still reaches it, so
+    /// a mod that claims a screen takes its input in `native_overlay_input`.
+    /// Client only.
+    pub(super) fn native_screen_claim(&self, screen: &str, claimed: &mut bool) {
+        let _ = (screen, claimed);
+    }
+    /// Draws over everything of the game's in this frame, the title screen,
+    /// the HUD and every screen included (toasts, the debug overlay and the
+    /// frame graph go on top): a mod's own menus and screens. `screen` is
+    /// `native_ui_screen`'s id, `mouse` the pointer in GUI pixels. Client
+    /// only.
+    pub(super) fn native_overlay(&mut self, batch: &mut HudBatch, screen: &str, mouse: [f32; 2]) {
+        let _ = (batch, screen, mouse);
+    }
+    /// Window input before the game sees it, on every screen, the title
+    /// screen included: set `consumed` and the game never hears it (a key's
+    /// release still reaches the game when its press did). Synthetic input
+    /// (the control socket, the pad menu) comes through here too. Client
+    /// only.
+    pub(super) fn native_overlay_input(
+        &mut self,
+        screen: &str,
+        input: &NativeInput<'_>,
+        consumed: &mut bool,
+    ) {
+        let _ = (screen, input, consumed);
     }
     /// A mouse button went down over the open screen
     /// (`ScreenEvent.MouseButtonPressed.Pre`, vanilla's
@@ -4929,6 +4992,135 @@ impl Game<'_> {
     /// Where the mouse is, in GUI pixels. API 20.
     pub(super) fn native_cursor(&self) -> [f32; 2] {
         [self.cursor.0, self.cursor.1]
+    }
+    /// The screen showing, as one id: `title` (the title screen's main
+    /// page), `title_worlds`, `title_create`, `title_multiplayer`,
+    /// `title_other` (its other pages), `options`, `loading` (a world or a
+    /// server on its way), and in a world `Screen::id`'s (`playing`,
+    /// `paused`, `inventory`, `chat`, `mod`...).
+    pub(super) fn native_ui_screen(&self) -> &'static str {
+        self.ui_screen_id()
+    }
+    /// Opens one of the game's screens or does one of its menu actions, as
+    /// its button would: `singleplayer`, `multiplayer`, `options`,
+    /// `language`, `accessibility`, `packs`, `credits`, `quit`, `resume`,
+    /// `pause`, `disconnect`, `advancements`, `stats`, `lan`, `title`. False
+    /// when it isn't one, or can't be done here (`resume` on the title).
+    pub(super) fn native_open(&mut self, what: &str) -> bool {
+        self.open_ui(what)
+    }
+    /// Joins server `address` (`host[:port]`, or an Eagler `ws://` /
+    /// `wss://` URL in the browser) from the title screen, as Direct
+    /// Connection does. False away from the title screen.
+    pub(super) fn native_connect(&mut self, address: &str) -> bool {
+        self.connect_from_title(address)
+    }
+    /// Copies `rgba` (`size[0]` by `size[1]` pixels, unpremultiplied) into
+    /// the mod canvas (`MOD_CANVAS_SPRITE`, 2048 by 1024) at `at`, before
+    /// the next frame draws; draw it with `native_sprite` and a part of the
+    /// canvas. A new atlas (a resource reload, `client_resources_reloaded`)
+    /// starts blank. False when it doesn't fit or the atlas has no canvas
+    /// yet (the boot screen's).
+    pub(super) fn native_canvas_upload(
+        &mut self,
+        at: [u32; 2],
+        size: [u32; 2],
+        rgba: Vec<u8>,
+    ) -> bool {
+        let (cw, ch) = horizon_client::hud::MOD_CANVAS_SIZE;
+        let Some(rect) = self
+            .gui
+            .atlas
+            .sprites
+            .get(horizon_client::hud::MOD_CANVAS_SPRITE)
+            .copied()
+        else {
+            return false;
+        };
+        if at[0] + size[0] > cw
+            || at[1] + size[1] > ch
+            || rgba.len() != (size[0] * size[1] * 4) as usize
+        {
+            return false;
+        }
+        let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
+        self.map_patches.push(horizon_client::font::Patch {
+            x: (rect.u0 * w).round() as u32 + at[0],
+            y: (rect.v0 * h).round() as u32 + at[1],
+            width: size[0],
+            height: size[1],
+            rgba,
+        });
+        true
+    }
+    /// Part `src` of sprite `name`, as `native_sprite` draws it, multiplied
+    /// by `argb`: a white mask in any colour, or an image faded.
+    pub(super) fn native_sprite_tinted(
+        &self,
+        batch: &mut HudBatch,
+        name: &str,
+        src: [f32; 4],
+        dst: [f32; 4],
+        argb: u32,
+    ) -> bool {
+        let Some(mut r) = self.gui.atlas.sprites.get(name).copied() else {
+            return false;
+        };
+        let (du, dv) = ((r.u1 - r.u0) / r.w as f32, (r.v1 - r.v0) / r.h as f32);
+        r.u0 += src[0] * du;
+        r.v0 += src[1] * dv;
+        r.u1 = r.u0 + src[2] * du;
+        r.v1 = r.v0 + src[3] * dv;
+        let [a, red, g, b] = argb.to_be_bytes();
+        batch.rect_uv(dst[0], dst[1], dst[2], dst[3], r, rgba(red, g, b, a));
+        true
+    }
+    /// A line of text as `native_text` draws it, in `argb` (translucent
+    /// too), scaled `scale` times about its top left.
+    pub(super) fn native_text_scaled(
+        &self,
+        batch: &mut HudBatch,
+        text: &str,
+        at: [f32; 2],
+        argb: u32,
+        shadow: bool,
+        scale: f32,
+    ) {
+        let [a, r, g, b] = argb.to_be_bytes();
+        if a == 0 {
+            return;
+        }
+        let start = batch.vertices.len();
+        batch.text_styled(
+            &self.gui.atlas,
+            &Text::literal(text),
+            at[0],
+            at[1],
+            rgba(r, g, b, a),
+            shadow,
+        );
+        if scale != 1.0 {
+            batch.scale_since(start, at[0], at[1], scale, scale);
+        }
+    }
+    /// Keeps what was drawn into `batch` since vertex `start` inside
+    /// `rect` (`[x, y, w, h]` GUI pixels): a scrolled list's rows.
+    pub(super) fn native_clip_since(&self, batch: &mut HudBatch, start: usize, rect: [f32; 4]) {
+        batch.clip_since(
+            start,
+            rect[0],
+            rect[1],
+            rect[0] + rect[2],
+            rect[1] + rect[3],
+        );
+    }
+    /// The GUI scale: window pixels per GUI pixel.
+    pub(super) fn native_gui_scale(&self) -> f32 {
+        self.ui_gui_scale() as f32
+    }
+    /// The player's name, as the game shows it.
+    pub(super) fn native_player_name(&self) -> String {
+        self.options.player_name()
     }
     /// The size of sprite `name` in its own pixels, if there is one. API 19.
     pub(super) fn native_sprite_size(&self, name: &str) -> Option<[f32; 2]> {

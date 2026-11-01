@@ -321,6 +321,7 @@ mod trident;
 mod tutorial;
 mod tweaks;
 mod ui_control;
+mod ui_overlay;
 mod vault;
 mod villagers;
 mod wandering_trader;
@@ -8149,6 +8150,9 @@ impl Game<'_> {
         self.draw_code_of_conduct(&mut batch);
         self.draw_link_prompt(&mut batch);
         self.draw_command_prompt(&mut batch);
+        // A mod's own menus and screens, over all of the game's.
+        let (screen, mouse) = (self.ui_screen_id(), [self.cursor.0, self.cursor.1]);
+        self.native_overlay(&mut batch, screen, mouse);
         // The ToastManager draws over every screen, the title and the
         // options included: the narrator's toast follows the player there.
         self.draw_narrator_toast(&mut batch);
@@ -8213,7 +8217,7 @@ impl Game<'_> {
             // TitleScreen.extractRenderState, then ToastManager over it: vanilla
             // draws the toast manager on every screen, so a pack download or a
             // resource-reload failure still shows on the title (#4428).
-            if let Some(title) = &self.title {
+            if let Some(title) = self.title.as_ref().filter(|_| !self.ui_screen_claimed()) {
                 title.draw_with_items(
                     &self.gui.atlas,
                     Some(&self.pack.item_renderer),
@@ -8492,7 +8496,7 @@ impl Game<'_> {
         batch.blur_at = batch.vertices.len() as u32;
         // PackConfirmScreen takes the open screen's place (it comes back once
         // the prompt is answered): the screen under the prompt isn't drawn.
-        let screen = if self.server_packs.prompt.is_some() {
+        let screen = if self.server_packs.prompt.is_some() || self.ui_screen_claimed() {
             Screen::Playing
         } else {
             self.screen
@@ -16526,6 +16530,12 @@ impl Game<'_> {
                 self.physical_buttons.remove(button);
             }
         }
+        // A mod's own menus hear the input first (`native_overlay_input`).
+        if self.overlay_input_event(&event) {
+            self.run_queued_ui(event_loop);
+            return;
+        }
+        let moved = matches!(event, WindowEvent::CursorMoved { .. });
         let mouse = if !self.pad_synthetic_input()
             && let WindowEvent::MouseInput { state, button, .. } = &event
         {
@@ -16548,6 +16558,10 @@ impl Game<'_> {
         if let Some((button, pressed, modifiers)) = mouse {
             self.native_mouse_button_post(button, pressed, modifiers);
         }
+        if moved {
+            self.overlay_pointer_moved();
+        }
+        self.run_queued_ui(event_loop);
     }
     fn handle_window_event_inner(&mut self, event_loop: &dyn EventLoopCtl, mut event: WindowEvent) {
         if let WindowEvent::Focused(false) = &event {

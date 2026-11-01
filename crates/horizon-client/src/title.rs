@@ -744,6 +744,36 @@ impl Title {
         title
     }
     /// Vanilla bypasses the selector when there are no saves.
+    /// A main-page button pressed from a mod's own title screen
+    /// (`native_open`), as its click would: 1 Singleplayer, 2 Quit, 3
+    /// Options, 4 Multiplayer, 6 Language, 7 Accessibility, 8 Edit Profile.
+    pub fn press_main(&mut self, id: u8) -> Action {
+        self.mode = Mode::Main;
+        self.focused_button = None;
+        match id {
+            1 => {
+                self.enter_singleplayer();
+                Action::None
+            }
+            2 => Action::Quit,
+            3 => Action::Options,
+            4 => {
+                self.mode = if self.skip_multiplayer_warning {
+                    Mode::Multiplayer(crate::multiplayer::Screen::list(&self.saves))
+                } else {
+                    Mode::MultiplayerWarning { check: false }
+                };
+                Action::None
+            }
+            6 => Action::Language,
+            7 => Action::Accessibility,
+            8 => {
+                self.edit_profile(false);
+                Action::None
+            }
+            _ => Action::None,
+        }
+    }
     pub fn enter_singleplayer(&mut self) {
         self.search.clear();
         self.search_focused = true;

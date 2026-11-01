@@ -1,0 +1,24 @@
+{
+  "hooks": [
+    {
+      "name": "screen_claim",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_screen_claim",
+      "side": "client",
+      "cancellable": false
+    },
+    {
+      "name": "overlay",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_overlay",
+      "side": "client",
+      "cancellable": false
+    },
+    {
+      "name": "overlay_input",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_overlay_input",
+      "side": "client",
+      "cancellable": true
+    }
+  ],
+  "rust_summary": "a client's own menus over the game's: screens a mod draws itself (`native_screen_claim`), a top overlay on every screen, the title included (`native_overlay`), and input it hears first (`native_overlay_input`). Helpers: `native_ui_screen`, `native_open`, `native_connect`, `native_canvas_upload` (the `horizon/mod-canvas` atlas slot), `native_sprite_tinted`, `native_text_scaled`, `native_clip_since`, `native_gui_scale`, `native_player_name`.",
+  "doc_summary": "a client's own menus over the game's (`native_screen_claim`, `native_overlay`, `native_overlay_input`) and the helpers they drive the game with."
+}
