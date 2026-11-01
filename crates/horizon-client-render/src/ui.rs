@@ -162,6 +162,9 @@ pub fn nine_slice(
     color: u32,
 ) {
     if let Some(r) = atlas.sprites.get(sprite) {
+        if crate::hud::skinned(batch, atlas, sprite, [x, y, w, h], color) {
+            return;
+        }
         draw_nine_slice(batch, *r, scaling(sprite, r), [x, y, w, h], color);
     }
 }
@@ -179,6 +182,9 @@ pub fn blit_sprite(
     color: u32,
 ) {
     if let Some(r) = atlas.sprites.get(sprite) {
+        if crate::hud::skinned(batch, atlas, sprite, [x, y, w, h], color) {
+            return;
+        }
         draw_sprite(batch, *r, nine_slice_metadata(sprite), [x, y, w, h], color);
     }
 }
@@ -288,6 +294,9 @@ pub fn tiled_sized(
     let Some(r) = atlas.sprites.get(sprite).copied() else {
         return;
     };
+    if crate::hud::skinned(batch, atlas, sprite, [x, y, w, h], color) {
+        return;
+    }
     tile(
         batch,
         r,

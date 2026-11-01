@@ -8167,6 +8167,10 @@ impl Game<'_> {
     }
     fn hud_layers(&mut self, size: [u32; 2]) -> HudBatch {
         let mut batch = HudBatch::new(size);
+        // A client's own backdrop where the panorama would be (`native_backdrop`).
+        if self.shows_panorama() && self.backdrop_claimed() {
+            self.native_backdrop(&mut batch);
+        }
         // GlobalSettingsUniform's GameTime, for a resource pack's text shader.
         batch.game_time = ((self.world.game_time.rem_euclid(24000)) as f32
             + self.clock.fraction() as f32)
@@ -15486,6 +15490,7 @@ impl Game<'_> {
                 self.water_plane(camera)
             },
             title,
+            panorama: !self.backdrop_claimed(),
             sky_blocked: self.potions.effects.get("blindness").is_some()
                 || self.potions.effects.get("darkness").is_some()
                 || matches!(
@@ -19803,6 +19808,7 @@ fn loading_frame(hud: &HudBatch) -> Frame<'_> {
         water_plane: None,
         cave_culling: false,
         title: true,
+        panorama: true,
         sky_blocked: false,
         skybox: false,
         end_sky: false,

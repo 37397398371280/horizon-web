@@ -39,6 +39,12 @@ impl Game<'_> {
         self.native_screen_claim(self.ui_screen_id(), &mut claimed);
         claimed
     }
+    /// Whether a mod draws the title's backdrop itself.
+    pub(super) fn backdrop_claimed(&self) -> bool {
+        let mut claimed = false;
+        self.native_backdrop_claim(&mut claimed);
+        claimed
+    }
     /// `native_open`.
     pub(super) fn open_ui(&mut self, what: &str) -> bool {
         if let Some(title) = self.title.as_mut() {

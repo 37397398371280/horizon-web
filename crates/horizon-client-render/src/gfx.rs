@@ -586,6 +586,9 @@ pub struct Frame<'a> {
     pub cave_culling: bool,
     /// Title screen: only the dedicated panorama cube map and the HUD.
     pub title: bool,
+    /// With `title`, the panorama cube map behind the HUD; off when a client
+    /// draws a backdrop of its own (`native_backdrop`), which leaves black.
+    pub panorama: bool,
     /// Lava, powder snow, blindness or darkness blocks the sky pass.
     pub sky_blocked: bool,
     /// Dimensions without a skybox (the Nether) clear to the fog colour.
@@ -5483,7 +5486,7 @@ impl Renderer {
             view_proj,
             frame.camera,
         ) * view_proj;
-        if frame.title {
+        if frame.title && frame.panorama {
             self.panorama.prepare(
                 &self.queue,
                 self.config.width,
@@ -7036,8 +7039,10 @@ impl Renderer {
                     }
                 }
                 if frame.title {
-                    self.panorama.draw(&mut pass);
-                    pass.set_bind_group(0, &self.group, &[]);
+                    if frame.panorama {
+                        self.panorama.draw(&mut pass);
+                        pass.set_bind_group(0, &self.group, &[]);
+                    }
                 } else if celestial_vertices > 0 || frame.end_sky {
                     pass.set_pipeline(&self.celestial_pipeline);
                     pass.set_bind_group(0, &self.entity_group, &[]);

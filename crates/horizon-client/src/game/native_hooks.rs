@@ -2415,6 +2415,18 @@ impl Game<'_> {
     pub(super) fn native_screen_claim(&self, screen: &str, claimed: &mut bool) {
         let _ = (screen, claimed);
     }
+    /// Whether a mod draws the backdrop of the title screen and the screens
+    /// over it itself (`native_backdrop`), asked once a frame: set `claimed`
+    /// and Horizon draws no panorama. Client only.
+    pub(super) fn native_backdrop_claim(&self, claimed: &mut bool) {
+        let _ = claimed;
+    }
+    /// The backdrop of the title screen and the screens over it, when
+    /// `native_backdrop_claim` claimed it: drawn first into `batch`, under
+    /// everything else (a screen's menu blur blurs it). Client only.
+    pub(super) fn native_backdrop(&self, batch: &mut HudBatch) {
+        let _ = batch;
+    }
     /// Draws over everything of the game's in this frame, the title screen,
     /// the HUD and every screen included (toasts, the debug overlay and the
     /// frame graph go on top): a mod's own menus and screens. `screen` is

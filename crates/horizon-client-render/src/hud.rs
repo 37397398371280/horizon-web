@@ -92,6 +92,45 @@ pub struct HudAtlas {
     pub blinks: horizon_optifine::blink::Blinks,
     white: Rect,
 }
+/// A GUI skin: draws sprite `name` over `rect` (`[x, y, w, h]` GUI pixels,
+/// `color` its tint) its own way and returns true, or returns false for the
+/// sprite to draw as usual. A client's look over the game's widgets, by
+/// sprite name, as a resource pack's would be but drawn (`set_skin`).
+pub type Skin = dyn Fn(&mut HudBatch, &HudAtlas, &str, [f32; 4], u32) -> bool;
+
+thread_local! {
+    static SKIN: std::cell::RefCell<Option<std::rc::Rc<Skin>>> =
+        const { std::cell::RefCell::new(None) };
+    static IN_SKIN: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Installs a GUI skin for this thread's GUI (none takes it away). Every
+/// sprite drawn by name (`ui::nine_slice`, `ui::blit_sprite`, `ui::tiled`,
+/// `HudBatch::sprite`, `sprite_scaled`) asks it first.
+pub fn set_skin(skin: Option<std::rc::Rc<Skin>>) {
+    SKIN.with(|s| *s.borrow_mut() = skin);
+}
+
+/// Whether the installed skin drew `name` over `rect`. Not while the skin
+/// itself draws: what it draws by name draws as usual.
+pub fn skinned(
+    batch: &mut HudBatch,
+    atlas: &HudAtlas,
+    name: &str,
+    rect: [f32; 4],
+    color: u32,
+) -> bool {
+    if IN_SKIN.with(|c| c.get()) {
+        return false;
+    }
+    let Some(skin) = SKIN.with(|s| s.borrow().clone()) else {
+        return false;
+    };
+    IN_SKIN.with(|c| c.set(true));
+    let drawn = skin(batch, atlas, name, rect, color);
+    IN_SKIN.with(|c| c.set(false));
+    drawn
+}
 /// Atlas rows reserved for glyphs rasterized at run time.
 pub const GLYPH_ROWS: u32 = 512;
 /// The largest atlas side: the 2D texture limit of the GPUs Horizon runs on
@@ -1316,6 +1355,9 @@ impl HudBatch {
     }
     pub fn sprite(&mut self, atlas: &HudAtlas, name: &str, x: f32, y: f32) {
         if let Some(r) = atlas.sprites.get(name).copied() {
+            if skinned(self, atlas, name, [x, y, r.w as f32, r.h as f32], u32::MAX) {
+                return;
+            }
             self.rect_uv(x, y, r.w as f32, r.h as f32, r, u32::MAX);
         }
     }
@@ -1330,6 +1372,9 @@ impl HudBatch {
         color: u32,
     ) {
         if let Some(r) = atlas.sprites.get(name).copied() {
+            if skinned(self, atlas, name, [x, y, w, h], color) {
+                return;
+            }
             self.rect_uv(x, y, w, h, r, color);
         }
     }
