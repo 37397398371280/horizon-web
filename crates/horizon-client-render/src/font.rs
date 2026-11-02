@@ -102,6 +102,8 @@ struct TrueType {
 thread_local! {
     /// The GUI scale TrueType glyphs are drawn at (0: the files' own oversample).
     static GUI_SCALE: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
+    /// How far TrueType glyphs' shadow and bold copies sit, in GUI pixels (`set_smooth_offset`).
+    static TTF_OFFSET: std::cell::Cell<f32> = const { std::cell::Cell::new(1.0) };
 }
 enum Provider {
     Space(HashMap<char, f32>),
@@ -446,7 +448,7 @@ impl TrueType {
             right: 0.0,
             bottom: 0.0,
             advance,
-            offset: 1.0,
+            offset: TTF_OFFSET.with(|o| o.get()),
         };
         let Some(outline) = self.font.outline_glyph(glyph) else {
             return (empty, None);
@@ -479,7 +481,7 @@ impl TrueType {
                 right: left + w as f32 / os,
                 bottom: top + h as f32 / os,
                 advance,
-                offset: 1.0,
+                offset: TTF_OFFSET.with(|o| o.get()),
             },
             Some((w, h, rgba)),
         )
@@ -706,6 +708,16 @@ impl Font {
     /// (the window's GUI scale), forgetting those drawn at another.
     pub fn set_gui_scale(&self, scale: f32) {
         if GUI_SCALE.with(|s| s.replace(scale)) != scale {
+            self.reset_cache();
+        }
+    }
+    /// Puts TrueType glyphs' shadow and bold copies half a GUI pixel away
+    /// instead of vanilla's whole one: with a smooth font drawn at the GUI
+    /// scale, a whole one is two or three screen pixels and reads as the text
+    /// twice over (Incari's SmoothFont does the same).
+    pub fn set_smooth_offset(&self, on: bool) {
+        let offset = if on { 0.5 } else { 1.0 };
+        if TTF_OFFSET.with(|o| o.replace(offset)) != offset {
             self.reset_cache();
         }
     }
