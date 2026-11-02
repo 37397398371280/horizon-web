@@ -948,6 +948,8 @@ mod initial_history_tests {
             title: true,
             sky_blocked: false,
             skybox: false,
+            panorama: false,
+            sky_layers: &[],
             end_sky: false,
             end_sky_sprite: None,
             environment_fog: None,
