@@ -87,6 +87,10 @@ impl Game<'_> {
             "advancements" => 4,
             "lan" => 9,
             "friends" => 10,
+            "links" => 11,
+            "report_bugs" => 12,
+            "feedback" => 13,
+            "social" => 15,
             "packs" => {
                 self.open_options_at(false, horizon_client::options_ui::Page::Packs);
                 return true;
@@ -130,6 +134,10 @@ impl Game<'_> {
                 self.error = Some(e);
             }
         }
+    }
+    /// `native_external_server`: playing on a server, not a world of this game's.
+    pub(super) fn ui_external_server(&self) -> bool {
+        self.player.is_some() && self.external_server()
     }
     /// `native_gui_scale`.
     pub(super) fn ui_gui_scale(&self) -> f64 {

@@ -5018,6 +5018,8 @@ impl Game<'_> {
     /// `language`, `accessibility`, `packs`, `credits`, `quit`, `resume`,
     /// `pause`, `disconnect`, `advancements`, `stats`, `lan`, `title`. False
     /// when it isn't one, or can't be done here (`resume` on the title).
+    /// In a world, also the pause menu's `links`, `report_bugs`,
+    /// `feedback` and `social`.
     pub(super) fn native_open(&mut self, what: &str) -> bool {
         self.open_ui(what)
     }
@@ -5125,6 +5127,16 @@ impl Game<'_> {
             rect[0] + rect[2],
             rect[1] + rect[3],
         );
+    }
+    /// `key` translated into the game's language (`menu.returnToGame`), or
+    /// the key itself when the language has none.
+    pub(super) fn native_translate(&self, key: &str) -> String {
+        Text::translate(key, &[]).plain()
+    }
+    /// Whether the world played is a server's (the pause menu's Disconnect),
+    /// not one of this game's own.
+    pub(super) fn native_external_server(&self) -> bool {
+        self.ui_external_server()
     }
     /// The GUI scale: window pixels per GUI pixel.
     pub(super) fn native_gui_scale(&self) -> f32 {
