@@ -328,6 +328,8 @@ pub struct TabInputs<'a> {
     /// The player is in the level with an upside-down name
     /// (`AvatarRenderer.isPlayerUpsideDown`).
     pub upside_down: &'a dyn Fn(u128) -> bool,
+    /// Each name as it's shown, restyled by its UUID (a native mod's `native_tab_list_name`).
+    pub decorate: &'a dyn Fn(u128, &mut Text),
 }
 
 /// `PlayerTabOverlay`: the header, footer, visibility and heart states.
@@ -370,7 +372,8 @@ impl TabList {
         let mut max_score = 0;
         let mut entries = Vec::with_capacity(players.len());
         for p in &players {
-            let name = name_for_display(p, i.board).resolve_legacy();
+            let mut name = name_for_display(p, i.board).resolve_legacy();
+            (i.decorate)(p.uuid, &mut name);
             max_name = max_name.max(width(&name));
             let mut entry = Entry {
                 name,

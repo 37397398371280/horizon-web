@@ -59,6 +59,21 @@ pub struct BlockEntityDraw {
     lights: (Vec3, Vec3),
     vertices: Vec<Vertex>,
     kept: bool,
+    /// The drawn player's head, body, arms and legs as posed this frame, when a mod asked
+    /// (`NativePlayerLook::parts`): what `attach` moves onto.
+    parts: Option<[Mat4; 6]>,
+}
+
+/// A part of a humanoid model a mod's geometry can follow (`BlockEntityDraw::attach`).
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum HumanoidPart {
+    Head,
+    Body,
+    RightArm,
+    LeftArm,
+    RightLeg,
+    LeftLeg,
 }
 
 #[allow(dead_code)]
@@ -84,7 +99,27 @@ impl BlockEntityDraw {
             lights,
             vertices,
             kept: false,
+            parts: None,
         }
+    }
+    /// The drawn player's posed parts, for `attach`.
+    pub(super) fn set_parts(&mut self, parts: [Mat4; 6]) {
+        self.parts = Some(parts);
+    }
+    /// Moves what is drawn next onto `part` of the player drawn (`native_mob_layer` for a player
+    /// whose `native_player_look` set `parts`), as `ModelPart.translateAndRotate` does down the
+    /// model: from the part's pivot, turned with it (an emote's pose and sneaking included), in
+    /// the model's own axes (+y down, the front toward -z) and blocks (a model's pixels / 16).
+    /// `push` first and `pop` after. False, and nothing moved, when the parts weren't asked for.
+    /// Incari's.
+    pub fn attach(&mut self, part: HumanoidPart) -> bool {
+        let Some(parts) = self.parts else {
+            return false;
+        };
+        if let Some(pose) = self.poses.last_mut() {
+            *pose = parts[part as usize];
+        }
+        true
     }
     /// The vertices drawn, with those it was made with first.
     pub(super) fn into_vertices(self) -> Vec<Vertex> {
@@ -315,6 +350,7 @@ impl Game<'_> {
             lights: diffuse_lights(self.dim == Dim::Nether),
             vertices: std::mem::take(out),
             kept: false,
+            parts: None,
         };
         let now = self.world.game_time;
         let mut kept = self.kept_block_entities.borrow_mut();
@@ -576,6 +612,7 @@ mod tests {
             lights: diffuse_lights(false),
             vertices: Vec::new(),
             kept: false,
+            parts: None,
         }
     }
 

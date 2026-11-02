@@ -92,6 +92,116 @@ pub struct NativePlayerRender<'a> {
     pub local: bool,
 }
 
+/// Whose name tag `native_name_tag` restyles.
+// Native mods read it; nothing in Horizon does.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug)]
+pub struct NativeNameTag<'a> {
+    /// The player's profile name.
+    pub name: &'a str,
+    /// Their UUID, where the game knows it.
+    pub uuid: Option<u128>,
+    /// Whether it is this window's own player (Horizon's own name tag extra).
+    pub local: bool,
+}
+
+/// A mod's cape for a player (`NativePlayerLook::cape`): part `rect` (`[x, y, w, h]` pixels, the
+/// game's 64x32 cape layout) of sprite `sprite`, as a cape texture is read. A run-time picture
+/// is painted into the entity canvas (`native_entity_canvas_upload`, sprite
+/// `MOD_ENTITY_CANVAS_SPRITE`).
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct NativeCape {
+    pub sprite: &'static str,
+    pub rect: [f32; 4],
+}
+
+/// One player's look this frame, as `native_player_look` reads and changes it before the player
+/// is drawn (`AvatarRenderer.extractRenderState`'s end): who it is and what they wear, then what
+/// the mod draws differently.
+// Native mods read and set it; nothing in Horizon reads all of it.
+#[allow(dead_code)]
+#[derive(Clone, Debug)]
+pub struct NativePlayerLook<'a> {
+    /// The player's profile name.
+    pub name: &'a str,
+    /// Their UUID, where the game knows it (a server's players, the player's own session).
+    pub uuid: Option<u128>,
+    /// Whether it is this window's own player (third person, the inventory's picture).
+    pub local: bool,
+    /// The feet in the world, at the frame's partial tick.
+    pub position: [f64; 3],
+    /// From the camera, squared (blocks).
+    pub distance_sq: f64,
+    pub crouching: bool,
+    pub fall_flying: bool,
+    /// Invisible (the effect, or the server's flag): only its armour and held items draw.
+    pub invisible: bool,
+    /// The item worn on the head and on the chest (`minecraft:diamond_helmet`).
+    pub head_item: Option<&'a str>,
+    pub chest_item: Option<&'a str>,
+    /// The chest item draws wings (an elytra: `WingsLayer`, and no cape), or armour on the body
+    /// (the cape moves out over it).
+    pub chest_wings: bool,
+    pub chest_armor: bool,
+    /// Whether the player's own cape shows (they have one, and aren't invisible).
+    pub has_cape: bool,
+    /// The cape's flap, lean and lean2 in degrees (`AvatarRenderState.capeFlap`...): it turns back
+    /// `6 + lean / 2 + flap` degrees.
+    pub cape_angles: [f32; 3],
+    /// Set: a cape of the mod's in place of the player's own (or none), its elytra matching.
+    pub cape: Option<NativeCape>,
+    /// Set: no cape at all (one would go through the mod's geometry).
+    pub hide_cape: bool,
+    /// Set: a pose over the model's (an emote), its layers following.
+    pub pose: horizon_client::mobs::anim::PoseBlend,
+    /// Set: `native_mob_layer` gets the posed parts for `BlockEntityDraw::attach`.
+    pub parts: bool,
+}
+
+/// What a mod changed of the player being drawn now, for the layers drawn after
+/// `native_player_look`.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct ActiveLook {
+    mob: u32,
+    cape: Option<NativeCape>,
+    hide_cape: bool,
+    parts: bool,
+}
+
+thread_local! {
+    /// The player being drawn's look; the window's thread draws one entity at a time.
+    static ACTIVE: std::cell::Cell<Option<ActiveLook>> = const { std::cell::Cell::new(None) };
+}
+
+/// Holds a player's look while they're drawn: dropped, the next entity draws as the game's.
+pub(super) struct LookGuard {
+    blend: horizon_client::mobs::anim::PoseBlend,
+}
+
+impl Drop for LookGuard {
+    fn drop(&mut self) {
+        ACTIVE.with(|a| a.set(None));
+        horizon_client::mobs::anim::set_player_blend(self.blend);
+    }
+}
+
+/// The look a mod gave mob `id`, while it's drawn.
+pub(super) fn active_look(id: u32) -> Option<ActiveLook> {
+    ACTIVE.with(std::cell::Cell::get).filter(|a| a.mob == id)
+}
+
+impl ActiveLook {
+    /// The mod's cape (`Some(None)`: none at all), or None to draw the player's own.
+    pub(super) fn cape(&self) -> Option<Option<NativeCape>> {
+        if self.hide_cape {
+            Some(None)
+        } else {
+            self.cape.map(Some)
+        }
+    }
+}
+
 /// The pose a mod's mob model starts from: at the feet, `at` (relative to the
 /// camera), turned with the body so +z is the way it faces, +x its left and +y
 /// up, in blocks.
@@ -159,10 +269,78 @@ impl Game<'_> {
         if !listened {
             return;
         }
+        // The posed parts, only for a player a mod asked them for (`NativePlayerLook::parts`).
+        let parts = active_look(mob.id).filter(|l| l.parts).map(|_| {
+            horizon_client::mobs::render::humanoid_parts(mob, partial, camera, self.res.mob_data())
+        });
         self.mod_entity_draw(mob, partial, camera, light, out, |render, draw| {
+            if let Some(parts) = parts {
+                draw.set_parts(parts);
+            }
             self.native_mob_layer(render, who.as_ref(), draw);
             true
         });
+    }
+    /// `native_player_look` for the player `mob` (`who` says which; `head` and `chest` the items
+    /// they wear there), before they're drawn: what the mod changed holds until the guard drops,
+    /// at the end of this player's draw. None when no mod listens (`native_player_render_listened`).
+    pub(super) fn begin_player_look(
+        &self,
+        mob: &Mob,
+        who: NativePlayerRender<'_>,
+        partial: f32,
+        camera: DVec3,
+        head: Option<&str>,
+        chest: Option<&str>,
+    ) -> Option<LookGuard> {
+        let mut listened = false;
+        self.native_player_render_listened(&mut listened);
+        if !listened {
+            return None;
+        }
+        let render = NativeMobRender::of(mob, partial);
+        let feet = mob.previous.lerp(mob.position, f64::from(partial));
+        let feet = DVec3::new(feet.x, feet.y, feet.z);
+        let layers = chest
+            .and_then(|item| self.res.items().get(item))
+            .and_then(|i| i.equip_asset.as_ref())
+            .and_then(|asset| self.armor_stand_assets.equipment.get(asset));
+        let uuid = if who.local {
+            self.own_profile_uuid()
+        } else {
+            self.remote_player_uuid(mob.id)
+        };
+        let mut look = NativePlayerLook {
+            name: who.name,
+            uuid,
+            local: who.local,
+            position: feet.to_array(),
+            distance_sq: feet.distance_squared(camera),
+            crouching: mob.extra.crouching,
+            fall_flying: mob.extra.fall_flying,
+            invisible: mob.invisible || horizon_client::mobs::trader::is_invisible(mob),
+            head_item: head,
+            chest_item: chest,
+            chest_wings: layers.is_some_and(|k| k.contains_key("wings")),
+            chest_armor: layers.is_some_and(|k| k.contains_key("humanoid")),
+            has_cape: mob.cape.is_some() && !horizon_client::mobs::trader::is_invisible(mob),
+            cape_angles: horizon_client::mobs::render::cape_angles(mob, partial),
+            cape: None,
+            hide_cape: false,
+            pose: horizon_client::mobs::anim::PoseBlend::default(),
+            parts: false,
+        };
+        self.native_player_look(&render, &mut look);
+        let blend = horizon_client::mobs::anim::set_player_blend(look.pose);
+        ACTIVE.with(|a| {
+            a.set(Some(ActiveLook {
+                mob: mob.id,
+                cape: look.cape,
+                hide_cape: look.hide_cape,
+                parts: look.parts,
+            }))
+        });
+        Some(LookGuard { blend })
     }
     /// Gives `hook` the frame of `mob` and a draw posed at its feet; what it
     /// added to `out` stays when it answers true.

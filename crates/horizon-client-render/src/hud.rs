@@ -163,6 +163,12 @@ pub const TRIM_SLOTS: usize = 32;
 pub const MOD_CANVAS_SPRITE: &str = "horizon/mod-canvas";
 /// The mod canvas's size in pixels.
 pub const MOD_CANVAS_SIZE: (u32, u32) = (2048, 1024);
+/// The atlas slot native mods paint world textures into at run time
+/// (`native_entity_canvas_upload`): pictures for their geometry on entities
+/// (`native_draw_quad`) and players' capes, apart from the GUI's canvas.
+pub const MOD_ENTITY_CANVAS_SPRITE: &str = "horizon/mod-entity-canvas";
+/// The entity canvas's size in pixels.
+pub const MOD_ENTITY_CANVAS_SIZE: (u32, u32) = (512, 256);
 pub fn decode(path: &Path) -> Result<(u32, u32, Vec<u8>)> {
     decode_bytes(&fs::read(path)?)
 }
@@ -603,6 +609,13 @@ impl HudAtlas {
             MOD_CANVAS_SIZE.0,
             MOD_CANVAS_SIZE.1,
             vec![0; (MOD_CANVAS_SIZE.0 * MOD_CANVAS_SIZE.1 * 4) as usize],
+        ));
+        // Native mods' world textures (`native_entity_canvas_upload`), blank until they paint.
+        images.push((
+            MOD_ENTITY_CANVAS_SPRITE.into(),
+            MOD_ENTITY_CANVAS_SIZE.0,
+            MOD_ENTITY_CANVAS_SIZE.1,
+            vec![0; (MOD_ENTITY_CANVAS_SIZE.0 * MOD_ENTITY_CANVAS_SIZE.1 * 4) as usize],
         ));
         // The on-screen keyboard's text and corner masks (ui_theme), rasterized at run time.
         images.push((

@@ -456,7 +456,7 @@ use super::{
     execution_role::ExecutionRole,
     maps::{NativeMapDecoration, NativeMapInfo},
     native_block_entity_draw::BlockEntityDraw,
-    native_mob_draw::{NativeMobRender, NativePlayerRender},
+    native_mob_draw::{NativeMobRender, NativeNameTag, NativePlayerLook, NativePlayerRender},
     native_panel_recipes::RecipePage,
     native_server::{NativeCommand, NativeServerPlayer},
 };
@@ -2427,6 +2427,39 @@ impl Game<'_> {
         draw: &mut BlockEntityDraw,
     ) {
         let _ = (mob, who, draw);
+    }
+    /// A player about to be drawn, once a frame while in view (the other players, and this
+    /// window's own in third person and in the inventory's picture), as
+    /// `AvatarRenderer.extractRenderState` ends: `look` says who they are and what they wear
+    /// (UUID, armour, elytra, the cape's swing), and takes what a mod draws differently on them:
+    /// a cape of its own or none (`cape`, `hide_cape`; an elytra matches the cape), a pose over
+    /// the model's (`pose`: an emote; armour, sleeves and the cape follow), and the posed parts
+    /// for `native_mob_layer` (`parts`, then `BlockEntityDraw::attach`). Nothing is kept: each
+    /// frame starts from the game's. A mod hooking it hooks `native_player_render_listened` too.
+    /// Client-side.
+    pub(super) fn native_player_look(
+        &self,
+        player: &NativeMobRender<'_>,
+        look: &mut NativePlayerLook<'_>,
+    ) {
+        let _ = (player, look);
+    }
+    /// A player's name tag as it's drawn (`EntityRenderer.submitNameTag` for an avatar), the
+    /// team's prefix, suffix and colours already in: restyle `tag` (the name in a colour, a mark
+    /// before it). `who` says whose (UUID where the game knows it). Every frame while the tag
+    /// shows. Client-side.
+    pub(super) fn native_name_tag(&self, who: &NativeNameTag<'_>, tag: &mut Text) {
+        let _ = (who, tag);
+    }
+    /// A player's name in the tab list (`PlayerTabOverlay.getNameForDisplay`): restyle `name`.
+    /// `local`: the window's own player. Every frame while the list shows. Client-side.
+    pub(super) fn native_tab_list_name(&self, uuid: u128, local: bool, name: &mut Text) {
+        let _ = (uuid, local, name);
+    }
+    /// A chat line as it arrives (`ChatComponent.addMessage`), a player's or the system's,
+    /// before it's wrapped: restyle `message`. Once a line. Client-side.
+    pub(super) fn native_chat_message(&self, message: &mut Text) {
+        let _ = message;
     }
     /// Icons a mod puts on map `map` each time it is drawn: held, in an
     /// item frame or on the cartography table's screen (a map's pixels are
@@ -5216,6 +5249,45 @@ impl Game<'_> {
             .atlas
             .sprites
             .get(horizon_client::hud::MOD_CANVAS_SPRITE)
+            .copied()
+        else {
+            return false;
+        };
+        if at[0] + size[0] > cw
+            || at[1] + size[1] > ch
+            || rgba.len() != (size[0] * size[1] * 4) as usize
+        {
+            return false;
+        }
+        let (w, h) = (self.gui.atlas.width as f32, self.gui.atlas.height as f32);
+        self.map_patches.push(horizon_client::font::Patch {
+            x: (rect.u0 * w).round() as u32 + at[0],
+            y: (rect.v0 * h).round() as u32 + at[1],
+            width: size[0],
+            height: size[1],
+            rgba,
+        });
+        true
+    }
+    /// Copies `rgba` (`size[0]` by `size[1]` pixels, unpremultiplied) into
+    /// the entity canvas (`MOD_ENTITY_CANVAS_SPRITE`, 512 by 256) at `at`,
+    /// before the next frame draws: a mod's own pictures for world geometry
+    /// (`native_draw_quad` with that sprite and a part of it, a player's cape
+    /// with `NativeCape`), kept apart from the GUI's canvas. A new atlas (a
+    /// resource reload) starts blank. False when it doesn't fit or the atlas
+    /// has no entity canvas.
+    pub(super) fn native_entity_canvas_upload(
+        &mut self,
+        at: [u32; 2],
+        size: [u32; 2],
+        rgba: Vec<u8>,
+    ) -> bool {
+        let (cw, ch) = horizon_client::hud::MOD_ENTITY_CANVAS_SIZE;
+        let Some(rect) = self
+            .gui
+            .atlas
+            .sprites
+            .get(horizon_client::hud::MOD_ENTITY_CANVAS_SPRITE)
             .copied()
         else {
             return false;

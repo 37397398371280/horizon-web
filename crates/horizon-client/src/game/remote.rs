@@ -1345,6 +1345,9 @@ impl Game<'_> {
             return false;
         }
         let text = content.plain();
+        // `native_chat_message`: a mod restyles the line (the log keeps it as it came).
+        let mut content = content;
+        self.native_chat_message(&mut content);
         let focused = self.screen == Screen::Chat;
         if source == horizon_client::chat::ChatSource::Player {
             self.ui.chat.add_signed(
@@ -9348,6 +9351,18 @@ impl Game<'_> {
     pub(super) fn remote_glowing(&self, id: u32) -> Option<bool> {
         let r = self.remote.as_ref()?;
         Some(r.glowing.contains(&(id as i32)))
+    }
+    /// The UUID of another player the server sent, by entity id.
+    pub(super) fn remote_player_uuid(&self, id: u32) -> Option<u128> {
+        let r = self.remote.as_ref()?;
+        r.level_players
+            .get(&(id as i32))
+            .copied()
+            .filter(|u| *u != r.profile)
+    }
+    /// The player's own UUID on the server played (its session's profile).
+    pub(super) fn own_profile_uuid(&self) -> Option<u128> {
+        self.remote.as_ref().map(|r| r.profile).filter(|u| *u != 0)
     }
     /// The profile name of another player the server sent, by entity id.
     pub(super) fn remote_player_name(&self, id: u32) -> Option<&str> {

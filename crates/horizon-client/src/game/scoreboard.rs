@@ -849,9 +849,16 @@ impl Game<'_> {
         for p in players.iter_mut().filter(|p| faces.contains(&p.uuid)) {
             p.skin = self.face_skin(p.uuid, &p.skin);
         }
+        // Out while it lays out, so the names' hook can see the game.
+        let mut list = std::mem::take(&mut self.tab_list);
         let board = &self.score.board;
         let objective = board.display_objective(sb::SLOT_LIST);
         let up = |id: u128| upside_down.contains(&id);
+        // `native_tab_list_name`: a mod restyles each name.
+        let own = self.own_profile_uuid();
+        let decorate = |id: u128, name: &mut horizon_client::text::Text| {
+            self.native_tab_list_name(id, Some(id) == own, name);
+        };
         let inputs = TabInputs {
             players: &players,
             board,
@@ -867,8 +874,10 @@ impl Game<'_> {
                 f64::from(self.settings.text_background_opacity),
             ),
             upside_down: &up,
+            decorate: &decorate,
         };
-        let draws = self.tab_list.layout(&inputs, &self.gui.atlas.font);
+        let draws = list.layout(&inputs, &self.gui.atlas.font);
+        self.tab_list = list;
         horizon_client::hud_layout::paint(batch, &self.gui.atlas, &draws);
     }
 }

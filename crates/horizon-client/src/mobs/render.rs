@@ -1397,17 +1397,7 @@ pub fn cape(
     let s = anim::state(m, alpha);
     let mut poses = Poses::new(model);
     anim::setup(m, &s, &mut poses, &data.animations);
-    let a = f64::from(alpha);
-    let at = [
-        m.previous.x + (m.position.x - m.previous.x) * a,
-        m.previous.y + (m.position.y - m.previous.y) * a,
-        m.previous.z + (m.position.z - m.previous.z) * a,
-    ];
-    let body = m.previous_body_yaw + wrap(m.body_yaw - m.previous_body_yaw) * alpha;
-    // LivingEntityRenderState.fallFlyingScale.
-    let ticks = m.extra.fall_fly_ticks as f32 + alpha;
-    let gliding = (ticks * ticks / 100.0).clamp(0.0, 1.0);
-    let [flap, lean, lean2] = m.extra.avatar.cape(alpha, at, body, gliding);
+    let [flap, lean, lean2] = cape_angles(m, alpha);
     let pose = poses.get("cape");
     let by = glam::Quat::from_rotation_y(-PI)
         * glam::Quat::from_rotation_x((6.0 + lean / 2.0 + flap).to_radians())
@@ -1418,6 +1408,48 @@ pub fn cape(
     (pose[3], pose[4], pose[5]) = (x, y, z);
     // RenderTypes.entitySolid with OverlayTexture.NO_OVERLAY.
     draw(model, base, &poses, uv, 0xFFFF_FFFF, light, 0, out);
+}
+/// `AvatarRenderer.extractCapeState`: the cape's flap, lean and lean2 (degrees) for `m` at
+/// `alpha`.
+pub fn cape_angles(m: &Mob, alpha: f32) -> [f32; 3] {
+    let a = f64::from(alpha);
+    let at = [
+        m.previous.x + (m.position.x - m.previous.x) * a,
+        m.previous.y + (m.position.y - m.previous.y) * a,
+        m.previous.z + (m.position.z - m.previous.z) * a,
+    ];
+    let body = m.previous_body_yaw + wrap(m.body_yaw - m.previous_body_yaw) * alpha;
+    // LivingEntityRenderState.fallFlyingScale.
+    let ticks = m.extra.fall_fly_ticks as f32 + alpha;
+    let gliding = (ticks * ticks / 100.0).clamp(0.0, 1.0);
+    m.extra.avatar.cape(alpha, at, body, gliding)
+}
+/// The humanoid parts a native mod can draw on (`BlockEntityDraw::attach`), in
+/// `HumanoidPart`'s order.
+pub const HUMANOID_PARTS: [&str; 6] = [
+    "head",
+    "body",
+    "right_arm",
+    "left_arm",
+    "right_leg",
+    "left_leg",
+];
+/// The camera-space transforms of `m`'s head, body, arms and legs as its model is posed this
+/// frame (`ModelPart.translateAndRotate` down the tree, `part_transform` for each, posed once).
+/// A part the model lacks is left at the model's root.
+pub fn humanoid_parts(m: &Mob, alpha: f32, camera: glam::DVec3, data: &MobData) -> [glam::Mat4; 6] {
+    let base = base_transform(m, alpha, camera);
+    let s = anim::state(m, alpha);
+    let (model_key, _) = body(m);
+    // An `Arc`: cloning it is a count.
+    let model = m
+        .kind
+        .layer(&model_key)
+        .cloned()
+        .unwrap_or_else(|| m.kind.model.clone());
+    let mut poses = Poses::new(&model);
+    anim::setup(m, &s, &mut poses, &data.animations);
+    HUMANOID_PARTS.map(|name| part_matrix(&model, base, &poses, name, 0.0).unwrap_or(base))
 }
 /// `Deadmau5EarsLayer.submit` with `PlayerEarsModel`: the player model's
 /// head carrying two 6x6x1 ears (the model's other cubes are cleared),
