@@ -1167,6 +1167,22 @@ pub(crate) struct NativeLine {
     pub(crate) width: f32,
 }
 
+/// A layer of a mod's custom sky (`native_sky_layers`): a texture of
+/// `native_sky_texture`'s (a cube's six faces in OptiFine's 3 by 2 grid), one
+/// of OptiFine's blends, an alpha and a rotation. The blend is for mods
+/// alone: Horizon only passes it on.
+#[allow(unused_imports)]
+pub(crate) use horizon_client::gfx::sky_layers::{
+    SkyBlend as NativeSkyBlend, SkyLayer as NativeSkyLayer,
+};
+
+/// `path` if it names a resource of the packs' own: relative, plain names,
+/// under `assets/`.
+fn resource_path(path: &str) -> Option<&str> {
+    let plain = |p: &str| !p.is_empty() && p != "." && p != ".." && !p.contains('\\');
+    (path.starts_with("assets/") && path.split('/').all(plain)).then_some(path)
+}
+
 /// A mob or another player as a client mod reads it (`native_entity`):
 /// its box at the frame's partial tick, where its eyes are and where it
 /// looks.
@@ -1904,6 +1920,22 @@ impl Game<'_> {
     /// own clock and `native_day_time` are unchanged. Client-side.
     pub(super) fn native_seen_day_time(&self, day_time: &mut i64) {
         let _ = day_time;
+    }
+    /// The custom sky's layers in this frame, drawn in order after the sky's
+    /// gradient and sunrise, before the sun, moon and stars (OptiFine's
+    /// custom skies). `day_time`, `rain` and `thunder` are as the player sees
+    /// them (`native_seen_day_time`, `native_seen_weather`), `sun_angle` the
+    /// sun's turn in radians. Called only in the Overworld while its sky
+    /// draws; Horizon draws at most 32. Client-side.
+    pub(super) fn native_sky_layers(
+        &self,
+        day_time: i64,
+        rain: f32,
+        thunder: f32,
+        sun_angle: f32,
+        layers: &mut Vec<NativeSkyLayer>,
+    ) {
+        let _ = (day_time, rain, thunder, sun_angle, layers);
     }
     /// Lines to draw in the world in this frame, `partial` ticks past the
     /// last tick: depth-tested, as F3+B's hitboxes. Horizon keeps the ones
@@ -4992,6 +5024,64 @@ impl Game<'_> {
             return None;
         }
         fs::read(self.options.resources.join(path)).ok()
+    }
+    /// A file of the active resource packs layered over the game's own
+    /// (`assets/minecraft/optifine/sky/world0/sky1.properties`), the top
+    /// pack's: what a pack brings that Horizon doesn't read itself. Only
+    /// relative paths of plain names under `assets/`. Client-side.
+    pub(super) fn native_resource(&self, path: &str) -> Option<Vec<u8>> {
+        resource_path(path)?;
+        fs::read(self.options.resources.join(path)).ok()
+    }
+    /// The files (names, not folders) in a folder of the active resource
+    /// packs layered over the game's own (`assets/minecraft/optifine/sky/world0`),
+    /// in name order; none if there's no such folder. Client-side.
+    pub(super) fn native_resource_files(&self, dir: &str) -> Vec<String> {
+        if resource_path(dir).is_none() {
+            return Vec::new();
+        }
+        let Ok(entries) = fs::read_dir(self.options.resources.join(dir)) else {
+            return Vec::new();
+        };
+        let mut names: Vec<String> = entries
+            .filter_map(Result::ok)
+            .filter(|e| fs::is_file(e.path()))
+            .filter_map(|e| e.file_name().into_string().ok())
+            .collect();
+        names.sort();
+        names
+    }
+    /// A PNG as RGBA pixels: width, height and the rows packed.
+    pub(super) fn native_decode_png(&self, png: &[u8]) -> Option<(u32, u32, Vec<u8>)> {
+        horizon_client::hud::decode_bytes(png).ok()
+    }
+    /// Uploads a custom sky's texture for `native_sky_layers` (`width` by
+    /// `height` RGBA, rows packed: a cube's six faces in OptiFine's 3 by 2
+    /// grid): its id, or none (no renderer, a wrong size, larger than the
+    /// GPU takes, or 64 kept already). It stays until
+    /// `native_drop_sky_texture`, or until the renderer is replaced (a
+    /// resource reload, a new device): check with `native_has_sky_texture`.
+    /// Client-side.
+    pub(super) fn native_sky_texture(
+        &mut self,
+        width: u32,
+        height: u32,
+        rgba: &[u8],
+    ) -> Option<u64> {
+        self.renderer.as_mut()?.sky_texture(width, height, rgba)
+    }
+    /// Frees a texture of `native_sky_texture`'s. Client-side.
+    pub(super) fn native_drop_sky_texture(&mut self, id: u64) {
+        if let Some(r) = self.renderer.as_mut() {
+            r.drop_sky_texture(id);
+        }
+    }
+    /// Whether texture `id` of `native_sky_texture`'s is still there.
+    /// Client-side.
+    pub(super) fn native_has_sky_texture(&self, id: u64) -> bool {
+        self.renderer
+            .as_ref()
+            .is_some_and(|r| r.has_sky_texture(id))
     }
     /// The block at `pos` (`mymod:cable`; air where nothing is loaded).
     /// API 20.

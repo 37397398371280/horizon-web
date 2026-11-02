@@ -2311,6 +2311,8 @@ struct Game<'a> {
     luminance: std::cell::OnceCell<horizon_client::dynamic_light::Luminance>,
     /// Name tags drawn over everything (`RenderPipelines.TEXT_SEE_THROUGH`).
     see_through_vertices: Vec<Vertex>,
+    /// Mods' custom sky layers this frame (`native_sky_layers`), kept to reuse.
+    sky_layers: Vec<native_hooks::NativeSkyLayer>,
     /// The first-person player's model, which only a native pack's shadow pass draws.
     shadow_only_vertices: std::cell::RefCell<Vec<Vertex>>,
     /// Runs of `entity_vertices` by entity, for a shader pack's per-entity draws; recorded only
@@ -15425,6 +15427,19 @@ impl Game<'_> {
             .then(|| self.border_draw(camera.to_array(), alpha as f32))
             .flatten();
         let see_through = std::mem::take(&mut self.see_through_vertices);
+        // Mods' custom sky (`native_sky_layers`): the Overworld's, with the day
+        // time and weather as seen.
+        let mut sky_layers = std::mem::take(&mut self.sky_layers);
+        sky_layers.clear();
+        if !title && self.dim == Dim::Overworld && self.settings.horizon.sky {
+            self.native_sky_layers(
+                self.seen_day_time(),
+                rain,
+                thunder,
+                sky.sun_angle.to_radians(),
+                &mut sky_layers,
+            );
+        }
         if title {
             self.dynamic_lights.clear();
         } else {
@@ -15559,6 +15574,7 @@ impl Game<'_> {
                 &[]
             },
             stars: stars.filter(|_| self.settings.horizon.sky || title),
+            sky_layers: &sky_layers,
             hand: &hand,
             hand_fov_degrees: self.hud_fov_degrees(camera_alpha as f32, camera.to_array()),
             screen: &screen,
@@ -15623,6 +15639,7 @@ impl Game<'_> {
         *self.glowing_vertices.get_mut() = glowing;
         *self.shadow_only_vertices.get_mut() = shadow_only;
         self.see_through_vertices = see_through;
+        self.sky_layers = sky_layers;
         result
     }
     /// The frame shows the title's panorama, not a level: the title screen, or a
@@ -18212,6 +18229,7 @@ impl<'a> Game<'a> {
             dynamic_lights: Vec::new(),
             luminance: Default::default(),
             see_through_vertices: Vec::new(),
+            sky_layers: Vec::new(),
             shadow_only_vertices: Default::default(),
             entity_spans: Default::default(),
             entity_motion: Default::default(),
@@ -19841,6 +19859,7 @@ fn loading_frame(hud: &HudBatch) -> Frame<'_> {
         shadow_only: &[],
         celestial: &[],
         stars: None,
+        sky_layers: &[],
         hand: &[],
         hand_fov_degrees: 70.0,
         screen: &[],
