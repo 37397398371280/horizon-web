@@ -3044,8 +3044,11 @@ Would you like to enable the Narrator or visit the Accessibility Settings?",
             } else {
                 "gui/sprites/widget/button"
             };
-            // Nine-slice approximation: left and right halves of the 200-wide sprite.
-            if let Some(r) = atlas.sprites.get(sprite).copied() {
+            // A GUI skin draws it its own way; else a nine-slice approximation: left and right
+            // halves of the 200-wide sprite.
+            if !crate::hud::skinned(batch, atlas, sprite, [b.x, b.y, b.w, 20.0], u32::MAX)
+                && let Some(r) = atlas.sprites.get(sprite).copied()
+            {
                 let half = b.w / 2.0;
                 let mut left = r;
                 left.u1 = r.u0 + (r.u1 - r.u0) * (half / r.w as f32);
