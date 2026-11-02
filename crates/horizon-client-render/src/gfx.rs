@@ -151,6 +151,7 @@ mod page_runs;
 pub mod panorama;
 mod readback;
 mod resident;
+pub mod sky_layers;
 mod stars;
 pub mod submit;
 mod sunrise_fan;
@@ -664,6 +665,9 @@ pub struct Frame<'a> {
     /// the sky's rotation (camera-relative world from star space) and the
     /// star brightness.
     pub stars: Option<(Mat4, f32)>,
+    /// Mods' custom sky layers, in order: drawn after the sky's gradient and sunrise, before
+    /// the sun, moon and stars, where the Overworld's sky draws (`skybox`).
+    pub sky_layers: &'a [sky_layers::SkyLayer],
     /// First-person hand and held item, drawn after clearing depth.
     pub hand: &'a [Vertex],
     /// `CameraRenderState.hudFov`: the hand's own field of view
@@ -843,6 +847,8 @@ pub struct Renderer {
     celestial_buffer: wgpu::Buffer,
     end_sky: end_sky::EndSky,
     stars: stars::Stars,
+    /// Mods' custom sky layers (OptiFine's skies) and their textures.
+    sky_layers: sky_layers::SkyLayers,
     /// The glowing entities' outline (`LevelRenderer.entityOutlineTarget`).
     entity_outline: entity_outline::EntityOutline,
     panorama: panorama::Panorama,
@@ -3536,6 +3542,7 @@ impl Renderer {
         let uploads = upload::Uploads::new(&device);
         let section_uploads = upload::Uploads::with_chunk(&device, SECTION_UPLOAD_CHUNK);
         let stars = stars::Stars::new(&device, config.format.remove_srgb_suffix());
+        let sky_layers = sky_layers::SkyLayers::new(&device, config.format.remove_srgb_suffix());
         let entity_outline = entity_outline::EntityOutline::new(
             &device,
             (&entity_shader, &entity_layout, &entity_vertex),
@@ -3631,6 +3638,7 @@ impl Renderer {
             celestial_buffer,
             end_sky: end_sky::EndSky::default(),
             stars,
+            sky_layers,
             entity_outline,
             panorama,
             border_pipeline,
@@ -4977,6 +4985,22 @@ impl Renderer {
     }
     /// Times the shader pack's passes on the GPU while `on` (the F3 overlay is open), or always
     /// with `HORIZON_SHADER_PACK_TIMING`.
+    /// Uploads a mod's sky texture (`width` by `height` RGBA8, rows packed: a cube's six
+    /// faces in OptiFine's 3 by 2 grid) for [`Frame::sky_layers`]: its id, or none when the
+    /// size is wrong or too large for the GPU, or 64 are kept already. It stays until
+    /// [`Self::drop_sky_texture`] or this renderer is replaced.
+    pub fn sky_texture(&mut self, width: u32, height: u32, rgba: &[u8]) -> Option<u64> {
+        self.sky_layers
+            .add(&self.device, &self.queue, width, height, rgba)
+    }
+    /// Frees a sky texture of [`Self::sky_texture`]'s.
+    pub fn drop_sky_texture(&mut self, id: u64) {
+        self.sky_layers.remove(id);
+    }
+    /// Whether this renderer still has sky texture `id` (a new renderer has none).
+    pub fn has_sky_texture(&self, id: u64) -> bool {
+        self.sky_layers.has(id)
+    }
     pub fn set_pass_timing(&mut self, on: bool) {
         self.pass_timing = on || pack_timing::PassTiming::logging();
     }
@@ -6374,6 +6398,13 @@ impl Renderer {
                 brightness,
             );
         }
+        let layers = if !frame.title && frame.skybox {
+            frame.sky_layers
+        } else {
+            &[]
+        };
+        self.sky_layers
+            .prepare(&mut self.uploads, &mut encoder, jittered, layers);
         let celestial_vertices = frame.celestial.len().min(2048 * 4);
         if frame.end_sky && !frame.title {
             self.end_sky.prepare(&self.device, frame.end_sky_sprite);
@@ -7037,6 +7068,11 @@ impl Renderer {
                             pass.draw(0..3, 0..1);
                         }
                     }
+                }
+                // Mods' custom sky: after the sunrise, before the sun, moon and stars.
+                if !frame.title && frame.skybox && self.sky_layers.any() {
+                    self.sky_layers.draw(&mut pass);
+                    pass.set_bind_group(0, &self.group, &[]);
                 }
                 if frame.title {
                     if frame.panorama {
