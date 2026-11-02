@@ -2427,6 +2427,24 @@ impl Game<'_> {
     pub(super) fn native_backdrop(&self, batch: &mut HudBatch) {
         let _ = batch;
     }
+    /// The minimap scanned chunk `chunk` of `dimension` (`minecraft:overworld`)
+    /// and found it changed: each column's colour as the map shades it, ARGB
+    /// row by row (`z * 16 + x`), 0 where nothing is known. Surface only (not
+    /// under a roof or in the Nether's caves), and only while the minimap
+    /// shows. Client only.
+    pub(super) fn native_map_tile(&self, dimension: &str, chunk: [i32; 2], colors: &[u32; 256]) {
+        let _ = (dimension, chunk, colors);
+    }
+    /// `native_map_tile` for each chunk the minimap just scanned.
+    pub(super) fn report_map_tiles(&self, scanned: &[(i32, i32)]) {
+        let dimension = self.dim.id();
+        let mut colors = [0u32; 256];
+        for &key in scanned {
+            if self.extras_minimap().tile_colors(key, &mut colors) {
+                self.native_map_tile(dimension, [key.0, key.1], &colors);
+            }
+        }
+    }
     /// An F2 screenshot was written to `path`. Client only.
     pub(super) fn native_screenshot_saved(&mut self, path: &std::path::Path) {
         let _ = path;

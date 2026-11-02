@@ -265,6 +265,8 @@ pub struct Minimap {
     changed: bool,
     /// The composed image, `SIZE` x `SIZE` RGBA.
     pub image: Vec<u8>,
+    /// Tiles scanned with something new since the last `take_scanned`.
+    scanned: Vec<(i32, i32)>,
 }
 impl Minimap {
     /// Forget everything (a new world or dimension, or the minimap turned off).
@@ -315,6 +317,9 @@ impl Minimap {
                     t.color != tile.color || t.height != tile.height || t.depth != tile.depth
                 }) {
                     self.changed = true;
+                    if self.scanned.len() < 4096 {
+                        self.scanned.push(key);
+                    }
                 }
                 self.tiles.insert(key, tile);
                 scanned += 1;
@@ -383,6 +388,40 @@ impl Minimap {
                     _ => UNKNOWN,
                 };
                 self.image[o..o + 4].copy_from_slice(&rgba);
+            }
+        }
+        true
+    }
+    /// The tiles scanned with something new since the last call.
+    pub fn take_scanned(&mut self) -> Vec<(i32, i32)> {
+        std::mem::take(&mut self.scanned)
+    }
+    /// Chunk `key`'s columns as the map shades them, ARGB row by row
+    /// (`z * 16 + x`), 0 where nothing is known; false without the tile.
+    pub fn tile_colors(&self, key: (i32, i32), out: &mut [u32; 256]) -> bool {
+        let Some(tile) = self.tiles.get(&key) else {
+            return false;
+        };
+        let north_tile = self.tiles.get(&(key.0, key.1 - 1));
+        for z in 0..16 {
+            for x in 0..16 {
+                let i = z * 16 + x;
+                let color = tile.color[i];
+                if color & !WALL == 0 {
+                    out[i] = 0;
+                    continue;
+                }
+                let north = if z > 0 {
+                    Some((tile.color[i - 16], tile.height[i - 16]))
+                } else {
+                    north_tile.map(|t| (t.color[240 + x], t.height[240 + x]))
+                }
+                .filter(|c| c.0 & !WALL != 0)
+                .map(|c| c.1);
+                let (wx, wz) = (key.0 * 16 + x as i32, key.1 * 16 + z as i32);
+                let b = brightness(color, tile.height[i], north, tile.depth[i], wx + wz);
+                let [r, g, bl, a] = packed_rgba(color & !WALL, b);
+                out[i] = u32::from_be_bytes([a, r, g, bl]);
             }
         }
         true

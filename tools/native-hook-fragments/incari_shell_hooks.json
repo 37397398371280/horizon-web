@@ -35,8 +35,14 @@
       "target": "horizon_client::game::native_hooks::Game<'_>::native_screenshot_saved",
       "side": "client",
       "cancellable": false
+    },
+    {
+      "name": "map_tile",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_map_tile",
+      "side": "client",
+      "cancellable": false
     }
   ],
-  "rust_summary": "a client's own menus over the game's: screens a mod draws itself (`native_screen_claim`), a top overlay on every screen, the title included (`native_overlay`), and input it hears first (`native_overlay_input`). A backdrop of its own in place of the panorama (`native_backdrop_claim`, `native_backdrop`), and a GUI skin over the game's sprites by name (`hud::set_skin`). Helpers: `native_ui_screen`, `native_open`, `native_connect`, `native_canvas_upload` (the `horizon/mod-canvas` atlas slot), `native_sprite_tinted`, `native_text_scaled`, `native_clip_since`, `native_gui_scale`, `native_player_name`. `native_screenshot_saved`; `native_download`, `native_set_clipboard_image`, `native_open_url`, `native_open_path`; `multiplayer::set_featured` (a client's featured servers pinned atop the list, with a label).",
+  "rust_summary": "a client's own menus over the game's: screens a mod draws itself (`native_screen_claim`), a top overlay on every screen, the title included (`native_overlay`), and input it hears first (`native_overlay_input`). A backdrop of its own in place of the panorama (`native_backdrop_claim`, `native_backdrop`), and a GUI skin over the game's sprites by name (`hud::set_skin`). Helpers: `native_ui_screen`, `native_open`, `native_connect`, `native_canvas_upload` (the `horizon/mod-canvas` atlas slot), `native_sprite_tinted`, `native_text_scaled`, `native_clip_since`, `native_gui_scale`, `native_player_name`. `native_screenshot_saved`; `native_download`, `native_set_clipboard_image`, `native_open_url`, `native_open_path`; `multiplayer::set_featured` (a client's featured servers pinned atop the list, with a label). `native_map_tile` (the minimap's changed surface tiles, shaded, for a mod's world map); `native_world_id`, `native_tab_players`, `native_server_address`, `native_utc_offset_ms`.",
   "doc_summary": "a client's own menus over the game's (`native_screen_claim`, `native_overlay`, `native_overlay_input`) and the helpers they drive the game with."
 }

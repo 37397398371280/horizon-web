@@ -160,6 +160,10 @@ impl Game<'_> {
     }
     /// Refresh the minimap's tiles within the frame budget, recompose its
     /// image when the view or a tile changed, and queue the upload.
+    /// The minimap extra's tiles.
+    pub(super) fn extras_minimap(&self) -> &horizon_client::minimap::Minimap {
+        &self.extras.minimap
+    }
     fn update_minimap(&mut self) {
         let Some((_, _, view)) = self.minimap_shown() else {
             if self.minimap_wanted().is_none() || self.player.is_none() {
@@ -195,6 +199,11 @@ impl Game<'_> {
             layer,
             MINIMAP_BUDGET,
         );
+        // A mod remembering the map (a world map) hears the surface's changed tiles.
+        let scanned = self.extras.minimap.take_scanned();
+        if layer == Layer::Surface {
+            self.report_map_tiles(&scanned);
+        }
         if !self.extras.minimap.compose(view) {
             return;
         }
