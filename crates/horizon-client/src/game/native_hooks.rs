@@ -5199,6 +5199,27 @@ impl Game<'_> {
         #[cfg(target_arch = "wasm32")]
         let _ = path;
     }
+    /// The world played, named stably for a mod's files: `world/<save
+    /// folder>` in single player, `server/<address in lower case>` on a
+    /// server or LAN; None outside a world.
+    pub(super) fn native_world_id(&self) -> Option<String> {
+        self.player.as_ref()?;
+        if self.remote.is_none() {
+            let folder = self
+                .save
+                .root
+                .ancestors()
+                .find(|p| {
+                    p.parent()
+                        .and_then(|q| q.file_name())
+                        .is_some_and(|n| n == "saves")
+                })
+                .and_then(|p| p.file_name())?;
+            return Some(format!("world/{}", folder.to_string_lossy()));
+        }
+        self.server_address()
+            .map(|a| format!("server/{}", a.to_lowercase()))
+    }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {
         use horizon_client::clipboard::Clipboard;
