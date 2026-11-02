@@ -41,8 +41,32 @@
       "target": "horizon_client::game::native_hooks::Game<'_>::native_map_tile",
       "side": "client",
       "cancellable": false
+    },
+    {
+      "name": "player_look",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_player_look",
+      "side": "client",
+      "cancellable": false
+    },
+    {
+      "name": "name_tag",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_name_tag",
+      "side": "client",
+      "cancellable": false
+    },
+    {
+      "name": "tab_list_name",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_tab_list_name",
+      "side": "client",
+      "cancellable": false
+    },
+    {
+      "name": "chat_message",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_chat_message",
+      "side": "client",
+      "cancellable": false
     }
   ],
-  "rust_summary": "a client's own menus over the game's: screens a mod draws itself (`native_screen_claim`), a top overlay on every screen, the title included (`native_overlay`), and input it hears first (`native_overlay_input`). A backdrop of its own in place of the panorama (`native_backdrop_claim`, `native_backdrop`), and a GUI skin over the game's sprites by name (`hud::set_skin`). Helpers: `native_ui_screen`, `native_open`, `native_connect`, `native_canvas_upload` (the `horizon/mod-canvas` atlas slot), `native_sprite_tinted`, `native_text_scaled`, `native_clip_since`, `native_gui_scale`, `native_player_name`. `native_screenshot_saved`; `native_download`, `native_set_clipboard_image`, `native_open_url`, `native_open_path`; `multiplayer::set_featured` (a client's featured servers pinned atop the list, with a label). `native_map_tile` (the minimap's changed surface tiles, shaded, for a mod's world map); `native_world_id`, `native_tab_players`, `native_server_address`, `native_utc_offset_ms`.",
+  "rust_summary": "a client's own menus over the game's: screens a mod draws itself (`native_screen_claim`), a top overlay on every screen, the title included (`native_overlay`), and input it hears first (`native_overlay_input`). A backdrop of its own in place of the panorama (`native_backdrop_claim`, `native_backdrop`), and a GUI skin over the game's sprites by name (`hud::set_skin`). Helpers: `native_ui_screen`, `native_open`, `native_connect`, `native_canvas_upload` (the `horizon/mod-canvas` atlas slot), `native_sprite_tinted`, `native_text_scaled`, `native_clip_since`, `native_gui_scale`, `native_player_name`. `native_screenshot_saved`; `native_download`, `native_set_clipboard_image`, `native_open_url`, `native_open_path`; `multiplayer::set_featured` (a client's featured servers pinned atop the list, with a label). `native_map_tile` (the minimap's changed surface tiles, shaded, for a mod's world map); `native_world_id`, `native_tab_players`, `native_server_address`, `native_utc_offset_ms`. Players' looks for a cosmetics mod: `native_player_look` (before a player is drawn: their UUID, armour, elytra and cape swing; a mod's cape or none, a pose over the model's, and the posed parts for `native_mob_layer` through `BlockEntityDraw::attach`), `native_name_tag`, `native_tab_list_name` and `native_chat_message` (restyle a player's name tag, tab list name or a chat line), and `native_entity_canvas_upload` (the `horizon/mod-entity-canvas` atlas slot, a mod's world textures).",
   "doc_summary": "a client's own menus over the game's (`native_screen_claim`, `native_overlay`, `native_overlay_input`) and the helpers they drive the game with."
 }

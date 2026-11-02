@@ -640,6 +640,15 @@ impl Game<'_> {
             name: &name,
             local: true,
         };
+        // `native_player_look`, held for this draw.
+        let _look = self.begin_player_look(
+            m,
+            who,
+            alpha as f32,
+            camera,
+            self.armor[0].as_ref().map(|s| &*s.item),
+            self.armor[1].as_ref().map(|s| &*s.item),
+        );
         if body && self.mod_player_geometry(m, who, alpha as f32, camera, packed, out) {
             return;
         }
@@ -750,6 +759,19 @@ impl Game<'_> {
         let atlas = &self.gui.atlas;
         let lookup = |name: &str| atlas.sprites.get(name).map(|r| [r.u0, r.v0, r.u1, r.v1]);
         let mut verts = Vec::new();
+        // `native_player_look`: a mod's cape and pose show in the inventory's picture too.
+        let name = self.own_profile_name();
+        let _look = self.begin_player_look(
+            &m,
+            NativePlayerRender {
+                name: &name,
+                local: true,
+            },
+            1.0,
+            camera,
+            self.armor[0].as_ref().map(|s| &*s.item),
+            self.armor[1].as_ref().map(|s| &*s.item),
+        );
         // A spectator preview still draws its own model: the poses'
         // visibility hides body parts, leaving the head and its layers.
         let render = if self.own_body_visible() || self.spectator() {
@@ -833,9 +855,19 @@ impl Game<'_> {
         light: u32,
         out: &mut Vec<horizon_client::mesher::Vertex>,
     ) {
+        // `native_player_look`'s cape, if a mod gave one: the elytra matches it.
+        let sprites = &self.gui.atlas.sprites;
+        let cape = match super::native_mob_draw::active_look(m.id).and_then(|l| l.cape()) {
+            Some(cape) => cape.and_then(|c| sprites.get(c.sprite).map(|r| sprite_part(*r, c.rect))),
+            None => m
+                .cape
+                .as_deref()
+                .and_then(|c| sprites.get(c))
+                .map(|r| [r.u0, r.v0, r.u1, r.v1]),
+        };
         self.wings_geometry(
             chest,
-            m.cape.as_deref(),
+            cape,
             false,
             horizon_client::mobs::render::base_transform(m, partial, camera),
             m.extra.elytra.angles(partial),
@@ -863,13 +895,13 @@ impl Game<'_> {
     }
     /// `WingsLayer.submit` for any wearer: the wings of `chest`'s equipment
     /// asset on `base` (the wearer's model transform), `baby` for the baby
-    /// elytra model. `cape` is a player's own cape texture, which has its
-    /// elytra (`WingsLayer.getPlayerElytraTexture`).
+    /// elytra model. `cape` is a player's own cape texture (its UVs in the
+    /// atlas), which has its elytra (`WingsLayer.getPlayerElytraTexture`).
     #[allow(clippy::too_many_arguments)]
     pub(super) fn wings_geometry(
         &self,
         chest: Option<&str>,
-        cape: Option<&str>,
+        cape: Option<[f32; 4]>,
         baby: bool,
         base: glam::Mat4,
         angles: [f32; 3],
@@ -894,12 +926,11 @@ impl Game<'_> {
             return;
         };
         let sprites = &self.gui.atlas.sprites;
-        let rect = cape.and_then(|c| sprites.get(c));
-        let (Some(model), Some(rect)) = (
+        let (Some(model), Some(uv)) = (
             assets
                 .player
                 .get(if baby { "elytra_baby" } else { "elytra" }),
-            rect.or_else(|| sprites.get(texture)),
+            cape.or_else(|| sprites.get(texture).map(|r| [r.u0, r.v0, r.u1, r.v1])),
         ) else {
             return;
         };
@@ -918,7 +949,7 @@ impl Game<'_> {
                 }
                 p
             },
-            [rect.u0, rect.v0, rect.u1, rect.v1],
+            uv,
             light,
             overlay,
             out,
@@ -935,11 +966,17 @@ impl Game<'_> {
         light: u32,
         out: &mut Vec<horizon_client::mesher::Vertex>,
     ) {
-        let Some(rect) = m
-            .cape
-            .as_deref()
-            .and_then(|c| self.gui.atlas.sprites.get(c))
-        else {
+        // `native_player_look`'s cape, if a mod gave one (or took the cape away).
+        let sprites = &self.gui.atlas.sprites;
+        let uv = match super::native_mob_draw::active_look(m.id).and_then(|l| l.cape()) {
+            Some(cape) => cape.and_then(|c| sprites.get(c.sprite).map(|r| sprite_part(*r, c.rect))),
+            None => m
+                .cape
+                .as_deref()
+                .and_then(|c| sprites.get(c))
+                .map(|r| [r.u0, r.v0, r.u1, r.v1]),
+        };
+        let Some(uv) = uv else {
             return;
         };
         if horizon_client::mobs::trader::is_invisible(m) {
@@ -956,15 +993,7 @@ impl Game<'_> {
         if layers.is_some_and(|k| k.contains_key("humanoid")) {
             base *= glam::Mat4::from_translation(glam::Vec3::new(0.0, -0.053125, 0.06875));
         }
-        horizon_client::mobs::render::cape(
-            m,
-            partial,
-            base,
-            [rect.u0, rect.v0, rect.u1, rect.v1],
-            light,
-            self.res.mob_data(),
-            out,
-        );
+        horizon_client::mobs::render::cape(m, partial, base, uv, light, self.res.mob_data(), out);
     }
     /// `Deadmau5EarsLayer` (`AbstractClientPlayer.showExtraEars`): the ears
     /// of a player whose profile name is `deadmau5`, in the player's skin.
@@ -1240,6 +1269,16 @@ fn player_model_positions(
 fn player_walk_distance(from: Vec3, to: Vec3) -> f32 {
     let (dx, dz) = (to.x - from.x, to.z - from.z);
     (dx * dx + dz * dz).sqrt() as f32
+}
+
+/// The atlas UVs of part `part` (`[x, y, w, h]` in the sprite's own pixels) of sprite `r`.
+fn sprite_part(r: horizon_client::hud::Rect, part: [f32; 4]) -> [f32; 4] {
+    let (du, dv) = (
+        (r.u1 - r.u0) / r.w.max(1) as f32,
+        (r.v1 - r.v0) / r.h.max(1) as f32,
+    );
+    let (u0, v0) = (r.u0 + part[0] * du, r.v0 + part[1] * dv);
+    [u0, v0, u0 + part[2] * du, v0 + part[3] * dv]
 }
 
 #[cfg(test)]

@@ -128,6 +128,8 @@ impl Game<'_> {
         // for each tag made this quadratic in the number of loaded mobs.
         let ridden: std::collections::HashSet<u32> =
             self.mobs.iter().filter_map(|o| o.extra.mount).collect();
+        // The window's own player (Horizon's own name tag extra), for `native_name_tag`.
+        let own = self.player_model.as_ref().map(|m| m as *const Mob);
         for (m, name, player) in named.chain(players) {
             if !m.alive() {
                 continue;
@@ -207,11 +209,26 @@ impl Game<'_> {
             };
             // StringDecomposer.iterateFormatted: `§` codes a server leaves
             // inside the team prefix or the name itself apply at draw time.
-            let shown = match team {
+            let mut shown = match team {
                 Some(t) => t.formatted_name(member),
                 None => member,
             }
             .resolve_legacy();
+            // `native_name_tag`: a mod restyles a player's tag.
+            if player {
+                let local = own == Some(m as *const Mob);
+                let uuid = if local {
+                    self.own_profile_uuid()
+                } else {
+                    self.remote_player_uuid(m.id)
+                };
+                let who = super::native_mob_draw::NativeNameTag {
+                    name: &name,
+                    uuid,
+                    local,
+                };
+                self.native_name_tag(&who, &mut shown);
+            }
             let mut lines = Vec::new();
             // EntityRenderer.extractNameTags: the score shows within the
             // below-name distance (10), under the name.

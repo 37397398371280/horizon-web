@@ -868,6 +868,7 @@ pub fn setup(
             humanoid(p, s, &h);
             if player {
                 player_model_visibility(p, m.extra.hidden_model_parts, m.extra.spectator);
+                apply_player_blend(p);
             }
             if m.ai.aggressive && !bow {
                 // SkeletonModel melee pose.
@@ -962,6 +963,89 @@ pub fn setup(
             if p.has("right_hind_leg") {
                 quadruped(p, s);
             }
+        }
+    }
+}
+
+/// One part of a native mod's pose over a player model's (`native_player_look`): the part turned
+/// `weight` of the way (0 to 1) from the game's pose to `rotation` (x, y and z radians, as
+/// `ModelPart.xRot`, `yRot`, `zRot`), per angle as `Mth.lerp` does.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PartBlend {
+    pub weight: f32,
+    pub rotation: [f32; 3],
+}
+
+/// A native mod's pose laid over the player model's after its own `setupAnim` (an emote): the
+/// head, body, arms and legs, each blended toward its own rotation. Layers posed like the body
+/// (armour, the cape, sleeves and the hat as the parts' children) follow.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct PoseBlend {
+    pub head: PartBlend,
+    pub body: PartBlend,
+    pub right_arm: PartBlend,
+    pub left_arm: PartBlend,
+    pub right_leg: PartBlend,
+    pub left_leg: PartBlend,
+}
+
+impl PoseBlend {
+    /// Whether it moves nothing.
+    pub fn is_empty(&self) -> bool {
+        self.parts().iter().all(|(_, b)| b.weight <= 0.0)
+    }
+    fn parts(&self) -> [(&'static str, PartBlend); 6] {
+        [
+            ("head", self.head),
+            ("body", self.body),
+            ("right_arm", self.right_arm),
+            ("left_arm", self.left_arm),
+            ("right_leg", self.right_leg),
+            ("left_leg", self.left_leg),
+        ]
+    }
+}
+
+thread_local! {
+    /// The blend over the player model being drawn now (the game sets it around one player's
+    /// draw, `game::native_player_look`): a pose of the model's own, not of the mob, so every
+    /// layer that poses the model in the same frame (armour, cape, a mod's parts) agrees.
+    static PLAYER_BLEND: std::cell::Cell<PoseBlend> = const {
+        std::cell::Cell::new(PoseBlend {
+            head: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+            body: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+            right_arm: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+            left_arm: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+            right_leg: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+            left_leg: PartBlend { weight: 0.0, rotation: [0.0; 3] },
+        })
+    };
+}
+
+/// Lays `blend` over every player model posed from now until it's set again; the blend before.
+pub fn set_player_blend(blend: PoseBlend) -> PoseBlend {
+    PLAYER_BLEND.with(|b| b.replace(blend))
+}
+
+/// The blend set now.
+pub fn player_blend() -> PoseBlend {
+    PLAYER_BLEND.with(std::cell::Cell::get)
+}
+
+/// `PlayerModel.setupAnim`'s end, as a mod asked: the blend over the game's pose.
+fn apply_player_blend(p: &mut Poses) {
+    let blend = player_blend();
+    if blend.is_empty() {
+        return;
+    }
+    for (name, b) in blend.parts() {
+        if b.weight <= 0.0 || !p.has(name) {
+            continue;
+        }
+        let w = b.weight.min(1.0);
+        let pose = p.get(name);
+        for (i, to) in b.rotation.into_iter().enumerate() {
+            pose[3 + i] += (to - pose[3 + i]) * w;
         }
     }
 }

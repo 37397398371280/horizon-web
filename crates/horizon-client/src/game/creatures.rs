@@ -6222,6 +6222,18 @@ impl Game<'_> {
                 .then(|| self.remote_player_name(mob.id))
                 .flatten()
                 .map(|name| NativePlayerRender { name, local: false });
+            // `native_player_look`: what a mod draws differently on this player (a cape, a
+            // pose, its parts asked for), held until this player is drawn.
+            let _look = who.and_then(|w| {
+                self.begin_player_look(
+                    mob,
+                    w,
+                    alpha as f32,
+                    camera,
+                    mob.extra.head.as_deref(),
+                    mob.extra.chest.as_deref(),
+                )
+            });
             let modded = if layers_only {
                 false
             } else if let Some(who) = who {

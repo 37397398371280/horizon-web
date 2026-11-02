@@ -171,6 +171,7 @@ pub fn main() -> Result<()> {
                     gui_ticks: f["tick"].as_i64().unwrap_or(0),
                     background,
                     upside_down: &up,
+                    decorate: &|_, _| {},
                 };
                 for d in list.layout(&inputs, font) {
                     draws.push(match d {
