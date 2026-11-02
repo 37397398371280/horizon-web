@@ -5264,69 +5264,27 @@ impl Game<'_> {
     /// the browser. False where there's no such thing (the desktop, which
     /// shows the folder instead).
     pub(super) fn native_download(&mut self, name: &str, data: Vec<u8>) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            horizon_os::web::download(name, &data);
-            true
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = (name, data);
-            false
-        }
+        self.page_download(name, data)
     }
     /// Puts a PNG on the clipboard as an image; false where it can't be.
     pub(super) fn native_set_clipboard_image(&mut self, png: &[u8]) -> bool {
-        #[cfg(target_arch = "wasm32")]
-        {
-            horizon_os::web::clipboard_image(png)
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            let _ = png;
-            false
-        }
+        self.page_clipboard_image(png)
     }
     /// Opens an `http(s)://` link in the browser, without asking: the mod
     /// asked already. Anything else is refused.
     pub(super) fn native_open_url(&mut self, url: &str) -> bool {
-        if !(url.starts_with("https://") || url.starts_with("http://")) {
-            return false;
-        }
-        #[cfg(target_arch = "wasm32")]
-        horizon_os::web::open_url(url);
-        #[cfg(not(target_arch = "wasm32"))]
-        super::packs::open_uri(url);
-        true
+        self.page_open_url(url)
     }
     /// Opens a folder of the game's in the system's file manager (the
     /// desktop only).
     pub(super) fn native_open_path(&mut self, path: &str) {
-        #[cfg(not(target_arch = "wasm32"))]
-        super::packs::open_folder(std::path::Path::new(path));
-        #[cfg(target_arch = "wasm32")]
-        let _ = path;
+        self.page_open_path(path);
     }
     /// The world played, named stably for a mod's files: `world/<save
     /// folder>` in single player, `server/<address in lower case>` on a
     /// server or LAN; None outside a world.
     pub(super) fn native_world_id(&self) -> Option<String> {
-        self.player.as_ref()?;
-        if self.remote.is_none() {
-            let folder = self
-                .save
-                .root
-                .ancestors()
-                .find(|p| {
-                    p.parent()
-                        .and_then(|q| q.file_name())
-                        .is_some_and(|n| n == "saves")
-                })
-                .and_then(|p| p.file_name())?;
-            return Some(format!("world/{}", folder.to_string_lossy()));
-        }
-        self.server_address()
-            .map(|a| format!("server/{}", a.to_lowercase()))
+        self.ui_world_id()
     }
     /// The players the server lists in its tab list, by UUID, with their
     /// names; empty outside a server.
@@ -5344,33 +5302,13 @@ impl Game<'_> {
     /// The local time zone's offset from UTC in milliseconds (0 where it
     /// can't be told).
     pub(super) fn native_utc_offset_ms(&self) -> i64 {
-        #[cfg(target_arch = "wasm32")]
-        {
-            horizon_os::web::utc_offset_ms()
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            0
-        }
+        self.page_utc_offset_ms()
     }
     /// The page's screen recorder (the browser build only): whether there is one,
     /// its state (0 none, 1 starting, 2 recording), why it last failed, and how
     /// long it's recorded.
     pub(super) fn native_recorder(&self) -> (bool, u32, String, u64) {
-        #[cfg(target_arch = "wasm32")]
-        {
-            use horizon_os::web as w;
-            (
-                w::recorder_supported(),
-                w::recorder_state(),
-                w::recorder_error(),
-                w::recorder_elapsed_ms(),
-            )
-        }
-        #[cfg(not(target_arch = "wasm32"))]
-        {
-            (false, 0, String::new(), 0)
-        }
+        self.page_recorder()
     }
     /// Starts recording the canvas, the game's sound and, with `mic`, the
     /// microphone; it downloads as `name` when stopped.
@@ -5383,15 +5321,11 @@ impl Game<'_> {
         mic_volume: f32,
         name: &str,
     ) {
-        #[cfg(target_arch = "wasm32")]
-        horizon_os::web::recorder_start(fps, kbps, game_volume, mic, mic_volume, name);
-        #[cfg(not(target_arch = "wasm32"))]
-        let _ = (fps, kbps, game_volume, mic, mic_volume, name);
+        self.page_recorder_start(fps, kbps, game_volume, mic, mic_volume, name);
     }
     /// Stops the recording, which then downloads.
     pub(super) fn native_recorder_stop(&mut self) {
-        #[cfg(target_arch = "wasm32")]
-        horizon_os::web::recorder_stop();
+        self.page_recorder_stop();
     }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {

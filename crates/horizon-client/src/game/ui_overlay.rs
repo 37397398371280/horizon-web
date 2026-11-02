@@ -147,6 +147,25 @@ impl Game<'_> {
         let pixels = horizon_client::profile::skin_pixels(&dir, &self.vanilla_root(), &profile)?;
         Some((pixels, profile.slim))
     }
+    /// `native_world_id`.
+    pub(super) fn ui_world_id(&self) -> Option<String> {
+        self.player.as_ref()?;
+        if self.remote.is_none() {
+            let folder = self
+                .save
+                .root
+                .ancestors()
+                .find(|p| {
+                    p.parent()
+                        .and_then(|q| q.file_name())
+                        .is_some_and(|n| n == "saves")
+                })
+                .and_then(|p| p.file_name())?;
+            return Some(format!("world/{}", folder.to_string_lossy()));
+        }
+        self.server_address()
+            .map(|a| format!("server/{}", a.to_lowercase()))
+    }
     /// `native_gui_scale`.
     pub(super) fn ui_gui_scale(&self) -> f64 {
         let size = self
@@ -232,5 +251,93 @@ impl Game<'_> {
             &super::native_hooks::NativeInput::Move { at },
             &mut consumed,
         );
+    }
+}
+
+/// What the helpers ask of the page (the browser build) or the desktop; the hook points stay
+/// free of `cfg`s.
+impl Game<'_> {
+    pub(super) fn page_download(&mut self, name: &str, data: Vec<u8>) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::download(name, &data);
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (name, data);
+            false
+        }
+    }
+    pub(super) fn page_clipboard_image(&mut self, png: &[u8]) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::clipboard_image(png)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = png;
+            false
+        }
+    }
+    pub(super) fn page_open_url(&mut self, url: &str) -> bool {
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return false;
+        }
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::open_url(url);
+        #[cfg(not(target_arch = "wasm32"))]
+        super::packs::open_uri(url);
+        true
+    }
+    pub(super) fn page_open_path(&mut self, path: &str) {
+        #[cfg(not(target_arch = "wasm32"))]
+        super::packs::open_folder(std::path::Path::new(path));
+        #[cfg(target_arch = "wasm32")]
+        let _ = path;
+    }
+    pub(super) fn page_recorder(&self) -> (bool, u32, String, u64) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use horizon_os::web as w;
+            (
+                w::recorder_supported(),
+                w::recorder_state(),
+                w::recorder_error(),
+                w::recorder_elapsed_ms(),
+            )
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (false, 0, String::new(), 0)
+        }
+    }
+    pub(super) fn page_recorder_start(
+        &mut self,
+        fps: u32,
+        kbps: u32,
+        game_volume: f32,
+        mic: bool,
+        mic_volume: f32,
+        name: &str,
+    ) {
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::recorder_start(fps, kbps, game_volume, mic, mic_volume, name);
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (fps, kbps, game_volume, mic, mic_volume, name);
+    }
+    pub(super) fn page_recorder_stop(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::recorder_stop();
+    }
+    pub(super) fn page_utc_offset_ms(&self) -> i64 {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::utc_offset_ms()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            0
+        }
     }
 }
