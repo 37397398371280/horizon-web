@@ -2427,6 +2427,10 @@ impl Game<'_> {
     pub(super) fn native_backdrop(&self, batch: &mut HudBatch) {
         let _ = batch;
     }
+    /// An F2 screenshot was written to `path`. Client only.
+    pub(super) fn native_screenshot_saved(&mut self, path: &std::path::Path) {
+        let _ = path;
+    }
     /// Draws over everything of the game's in this frame, the title screen,
     /// the HUD and every screen included (toasts, the debug overlay and the
     /// frame graph go on top): a mod's own menus and screens. `screen` is
@@ -5147,6 +5151,53 @@ impl Game<'_> {
     /// font, for a mod that draws into a batch itself.
     pub(super) fn native_atlas(&self) -> &horizon_client::hud::HudAtlas {
         &self.gui.atlas
+    }
+    /// Hands `data` to the player as a file called `name`: a download in
+    /// the browser. False where there's no such thing (the desktop, which
+    /// shows the folder instead).
+    pub(super) fn native_download(&mut self, name: &str, data: Vec<u8>) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::download(name, &data);
+            true
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = (name, data);
+            false
+        }
+    }
+    /// Puts a PNG on the clipboard as an image; false where it can't be.
+    pub(super) fn native_set_clipboard_image(&mut self, png: &[u8]) -> bool {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::clipboard_image(png)
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let _ = png;
+            false
+        }
+    }
+    /// Opens an `http(s)://` link in the browser, without asking: the mod
+    /// asked already. Anything else is refused.
+    pub(super) fn native_open_url(&mut self, url: &str) -> bool {
+        if !(url.starts_with("https://") || url.starts_with("http://")) {
+            return false;
+        }
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::open_url(url);
+        #[cfg(not(target_arch = "wasm32"))]
+        super::packs::open_uri(url);
+        true
+    }
+    /// Opens a folder of the game's in the system's file manager (the
+    /// desktop only).
+    pub(super) fn native_open_path(&mut self, path: &str) {
+        #[cfg(not(target_arch = "wasm32"))]
+        super::packs::open_folder(std::path::Path::new(path));
+        #[cfg(target_arch = "wasm32")]
+        let _ = path;
     }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {

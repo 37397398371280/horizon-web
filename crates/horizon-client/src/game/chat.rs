@@ -1469,6 +1469,7 @@ impl Game<'_> {
         let message = match result {
             Ok(_) => {
                 log::info!("Saved screenshot to {}", path.display());
+                self.native_screenshot_saved(&path);
                 let name = path.file_name().unwrap_or_default().to_string_lossy();
                 let link = Text::styled(
                     name,

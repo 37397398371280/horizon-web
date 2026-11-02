@@ -5,6 +5,25 @@ use std::sync::Mutex;
 use wasm_bindgen::prelude::*;
 
 #[wasm_bindgen(inline_js = r#"
+export function horizon_download(name, bytes) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([bytes.slice()]));
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+}
+export function horizon_clipboard_image(png) {
+    try {
+        const item = new ClipboardItem({ "image/png": new Blob([png.slice()], { type: "image/png" }) });
+        navigator.clipboard.write([item]).catch(() => {});
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+export function horizon_open_url(url) {
+    window.open(url, "_blank", "noopener,noreferrer");
+}
 export function horizon_console(level, message) {
     if (level <= 1) console.error(message);
     else if (level === 2) console.warn(message);
@@ -90,6 +109,9 @@ export function horizon_take_picked() {
 }
 "#)]
 extern "C" {
+    fn horizon_download(name: &str, bytes: &[u8]);
+    fn horizon_clipboard_image(png: &[u8]) -> bool;
+    fn horizon_open_url(url: &str);
     fn horizon_pick_file(kind: &str, accept: &str);
     fn horizon_take_picked() -> JsValue;
     fn horizon_console(level: u32, message: &str);
@@ -180,6 +202,21 @@ pub fn horizon_start(args: Vec<String>) {
 /// The arguments the page passed to [`horizon_start`].
 pub(crate) fn args() -> Vec<String> {
     ARGS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Hands `bytes` to the browser as a download called `name`.
+pub fn download(name: &str, bytes: &[u8]) {
+    horizon_download(name, bytes);
+}
+
+/// Puts a PNG on the clipboard as an image; false where the browser can't.
+pub fn clipboard_image(png: &[u8]) -> bool {
+    horizon_clipboard_image(png)
+}
+
+/// Opens `url` in a new tab.
+pub fn open_url(url: &str) {
+    horizon_open_url(url);
 }
 
 /// A line in the browser's console (`log::Level` as a number: 1 error, 2
