@@ -733,7 +733,7 @@ impl Read for EaglerSocket {
 impl Write for EaglerSocket {
     fn write(&mut self, data: &[u8]) -> io::Result<usize> {
         self.outgoing.extend_from_slice(data);
-        while let Some(body) = frame::split(&mut self.outgoing).map_err(io::Error::other)? {
+        while let Some(body) = split_frame(&mut self.outgoing).map_err(io::Error::other)? {
             self.handle(body)?;
         }
         Ok(data.len())
@@ -741,6 +741,20 @@ impl Write for EaglerSocket {
     fn flush(&mut self) -> io::Result<()> {
         Ok(())
     }
+}
+
+/// Split one complete frame off the front of `buffer`, if available: its contents without the
+/// length prefix.
+fn split_frame(buffer: &mut Vec<u8>) -> crate::Result<Option<Vec<u8>>> {
+    let Some((start, len)) = frame::header(buffer)? else {
+        return Ok(None);
+    };
+    if buffer.len() < start + len {
+        return Ok(None);
+    }
+    let contents = buffer[start..start + len].to_vec();
+    buffer.drain(..start + len);
+    Ok(Some(contents))
 }
 
 #[cfg(test)]

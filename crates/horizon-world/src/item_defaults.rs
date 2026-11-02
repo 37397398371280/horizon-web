@@ -22,7 +22,7 @@ use std::{collections::BTreeMap, io, path::Path};
 /// 79.
 #[inline(never)]
 pub fn native_modify_default_components(item: &str, components: &mut Map<String, Value>) {
-    let _ = (item, components);
+    crate::native_load_hooks::modify_default_components(item, components);
 }
 
 /// Every item's default components at `root`, by item id, with the mods'
