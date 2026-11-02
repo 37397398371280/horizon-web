@@ -1147,6 +1147,8 @@ fn clip_polygon(poly: &[HudVertex], axis: usize, limit: f32, keep_below: bool) -
 }
 /// The GUI Scale option (0 = auto).
 pub static GUI_SCALE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Steps below the largest scale that fits that Auto picks (a mod's choice; vanilla's is 0).
+pub static GUI_AUTO_STEP_DOWN: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
 /// One frame of overlay geometry in GUI pixels.
 pub struct HudBatch {
     pub vertices: Vec<HudVertex>,
@@ -1199,18 +1201,30 @@ pub struct EndPortalFill {
 pub fn rgba(r: u8, g: u8, b: u8, a: u8) -> u32 {
     u32::from(a) << 24 | u32::from(b) << 16 | u32::from(g) << 8 | u32::from(r)
 }
+/// `HudBatch::new`'s scale: the largest keeping >= 320x240 GUI pixels, capped by `limit` (the
+/// GUI Scale option, 0 = auto); Auto then steps `down` below it.
+fn gui_scale_for(window: [u32; 2], limit: u32, down: u32) -> u32 {
+    let mut scale = 1;
+    while (limit == 0 || scale < limit)
+        && window[0] / (scale + 1) >= 320
+        && window[1] / (scale + 1) >= 240
+    {
+        scale += 1;
+    }
+    if limit == 0 {
+        scale = scale.saturating_sub(down).max(1);
+    }
+    scale
+}
 impl HudBatch {
     /// Window.calculateScale: the largest scale keeping >= 320x240 GUI pixels,
-    /// capped by the GUI Scale option (0 = auto).
+    /// capped by the GUI Scale option (0 = auto; `GUI_AUTO_STEP_DOWN` steps below it).
     pub fn new(window: [u32; 2]) -> Self {
-        let limit = GUI_SCALE.load(std::sync::atomic::Ordering::Relaxed);
-        let mut scale = 1;
-        while (limit == 0 || scale < limit)
-            && window[0] / (scale + 1) >= 320
-            && window[1] / (scale + 1) >= 240
-        {
-            scale += 1;
-        }
+        let scale = gui_scale_for(
+            window,
+            GUI_SCALE.load(std::sync::atomic::Ordering::Relaxed),
+            GUI_AUTO_STEP_DOWN.load(std::sync::atomic::Ordering::Relaxed),
+        );
         Self {
             vertices: Vec::new(),
             scale: scale as f32,
@@ -3583,5 +3597,18 @@ texture=wide",
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod auto_step_down_tests {
+    use super::gui_scale_for;
+
+    #[test]
+    fn auto_steps_down_but_a_chosen_scale_stays() {
+        assert_eq!(gui_scale_for([1920, 1080], 0, 1), 3);
+        assert_eq!(gui_scale_for([640, 480], 0, 1), 1);
+        assert_eq!(gui_scale_for([1920, 1080], 4, 1), 4);
+        assert_eq!(gui_scale_for([1920, 1080], 0, 0), 4);
     }
 }
