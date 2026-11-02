@@ -17,8 +17,16 @@ impl Game<'_> {
         partial: f32,
         lines: &mut Vec<gizmos::Line>,
     ) -> Vec<dynamic_light::Colored> {
+        let particle_lights = self
+            .renderer
+            .as_ref()
+            .and_then(|r| r.particle_lights())
+            .map_or_else(Vec::new, |entries| {
+                self.particles
+                    .lights(entries, self.clock.camera_fraction() as f32)
+            });
         let Some(player) = self.native_player() else {
-            return Vec::new();
+            return dynamic_light::select_colored(particle_lights.into_iter(), camera);
         };
         let mut rims = Vec::new();
         let mut lights = Vec::new();
@@ -122,7 +130,9 @@ impl Game<'_> {
                 ))
         });
         dynamic_light::select_colored(
-            sources.map(|l| (l.at, l.rgb, l.radius, l.intensity)),
+            sources
+                .map(|l| (l.at, l.rgb, l.radius, l.intensity))
+                .chain(particle_lights),
             camera,
         )
     }
