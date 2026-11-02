@@ -5373,6 +5373,19 @@ impl Game<'_> {
     pub(super) fn native_ui_screen(&self) -> &'static str {
         self.ui_screen_id()
     }
+    /// Whether a server's dialog shows (`DialogScreen`, its warning or its
+    /// waiting screen). Dialogs draw over the screen under them, so
+    /// `native_ui_screen` still names that one (`playing`, `paused`...);
+    /// the dialog takes the keys and clicks all the same.
+    pub(super) fn native_dialog_open(&self) -> bool {
+        self.dialog_open()
+    }
+    /// The key a vanilla mapping (`key.friends`, `key.chat`...) is bound to,
+    /// as `options.txt` writes it (`key.keyboard.o`, `key.mouse.left`);
+    /// `key.keyboard.unknown` when it's unbound or isn't one.
+    pub(super) fn native_bound_key(&self, mapping: &str) -> &str {
+        self.settings.keys.get(mapping)
+    }
     /// Opens one of the game's screens or does one of its menu actions, as
     /// its button would: `singleplayer`, `multiplayer`, `options`,
     /// `language`, `accessibility`, `packs`, `credits`, `quit`, `resume`,
