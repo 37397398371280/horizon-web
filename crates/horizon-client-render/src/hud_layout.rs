@@ -836,12 +836,10 @@ pub fn paint(batch: &mut crate::hud::HudBatch, atlas: &crate::hud::HudAtlas, dra
                 let Some(mut r) = found else {
                     continue;
                 };
-                // A GUI skin draws whole sprites its own way (the hotbar, effects' backgrounds).
+                // A GUI skin draws whole sprites its own way (the hotbar, effects' backgrounds, a
+                // crosshair of the player's own, not inverted then).
                 let rect = [*x as f32, *y as f32, *w as f32, *h as f32];
-                if region.is_none()
-                    && *blend != Blend::Crosshair
-                    && crate::hud::skinned(batch, atlas, &name, rect, *color)
-                {
+                if region.is_none() && crate::hud::skinned(batch, atlas, &name, rect, *color) {
                     // Fall through to the pose below with what the skin drew.
                 } else {
                     if let Some([sw, sh, u, v]) = *region {
