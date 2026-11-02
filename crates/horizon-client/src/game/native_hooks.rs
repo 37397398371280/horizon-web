@@ -5143,6 +5143,11 @@ impl Game<'_> {
     pub(super) fn native_own_skin(&self) -> Option<(Vec<u8>, bool)> {
         self.ui_own_skin()
     }
+    /// The GUI atlas the HUD draws from: its sprites, the mod canvas and the
+    /// font, for a mod that draws into a batch itself.
+    pub(super) fn native_atlas(&self) -> &horizon_client::hud::HudAtlas {
+        &self.gui.atlas
+    }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {
         use horizon_client::clipboard::Clipboard;
