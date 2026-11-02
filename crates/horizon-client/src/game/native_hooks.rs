@@ -1157,6 +1157,43 @@ pub(crate) struct NativePlayer {
     pub(crate) dimension: &'static str,
 }
 
+/// What a mod draws as ghost blocks this frame (`native_ghosts`): the box
+/// they're in and how they look. Horizon then asks for each section's
+/// revision (`native_ghost_revision`) and, when one changed, its blocks
+/// (`native_ghost_section`).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub(crate) struct NativeGhosts {
+    /// Any number that names what the ghosts are of (a schematic loaded):
+    /// a new one drops every kept mesh.
+    pub(crate) source: u64,
+    /// Lowest block corner, and one past the highest; None for no ghosts.
+    pub(crate) bounds: Option<([i32; 3], [i32; 3])>,
+    /// 0 (none) to 255 (solid).
+    pub(crate) alpha: u8,
+    /// Blocks from the camera they're drawn within, at most 128.
+    pub(crate) range: u32,
+    /// Boxes filled see-through this frame (a mod's highlights), depth-tested;
+    /// at most 1024.
+    pub(crate) fills: Vec<NativeFill>,
+}
+
+/// A ghost block: its place in its section (`y << 8 | z << 4 | x`) and the
+/// state drawn there.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct NativeGhost {
+    pub(crate) at: u16,
+    pub(crate) state: BlockStateId,
+}
+
+/// A box filled in the world (`NativeGhosts::fills`): corners in world
+/// coordinates, ARGB.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct NativeFill {
+    pub(crate) min: [f64; 3],
+    pub(crate) max: [f64; 3],
+    pub(crate) argb: u32,
+}
+
 /// A line a mod draws in the world (`native_lines`): ends in world
 /// coordinates, ARGB, width in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -1943,6 +1980,26 @@ impl Game<'_> {
     /// Called only while a world is visible. Client-side.
     pub(super) fn native_lines(&self, partial: f32, lines: &mut Vec<NativeLine>) {
         let _ = (partial, lines);
+    }
+    /// Ghost blocks to draw this frame: set `ghosts`' box, opacity and
+    /// range (and any boxes to fill). Horizon meshes the box's sections
+    /// within range from the game's block models, nearest first, keeps each
+    /// mesh until its revision changes, and draws them see-through, fully
+    /// lit and depth-tested, with the entities' translucent geometry. Called
+    /// once a frame while a world is drawn. Client-side.
+    pub(super) fn native_ghosts(&self, ghosts: &mut NativeGhosts) {
+        let _ = ghosts;
+    }
+    /// A number that changes whenever section `section`'s ghosts (section
+    /// coordinates, `x >> 4`) might have: the section is meshed again when
+    /// it does. Called each frame for each section in range. Client-side.
+    pub(super) fn native_ghost_revision(&self, section: [i32; 3], revision: &mut u64) {
+        let _ = (section, revision);
+    }
+    /// Section `section`'s ghost blocks, while it's meshed (a few sections a
+    /// frame at most): push each one; air is none. Client-side.
+    pub(super) fn native_ghost_section(&self, section: [i32; 3], ghosts: &mut Vec<NativeGhost>) {
+        let _ = (section, ghosts);
     }
     /// The server's scoreboard sidebar was drawn at `bounds` (`[x, y, w,
     /// h]` in GUI pixels, vanilla's place) on a `screen` (`[w, h]` GUI
@@ -5363,6 +5420,103 @@ impl Game<'_> {
         let [_, r, g, b] = rgb.to_be_bytes();
         let color = rgba(r, g, b, 0xFF);
         batch.text_styled(&self.gui.atlas, &Text::literal(text), x, y, color, shadow);
+    }
+    /// The state `name` (`minecraft:oak_stairs`) with `properties`, those
+    /// left out at the block's defaults. With `strict`, None when a property
+    /// doesn't fit the block; without, such a property is left at its
+    /// default. None for a block the game hasn't.
+    pub(super) fn native_state_of(
+        &self,
+        name: &str,
+        properties: &[(&str, &str)],
+        strict: bool,
+    ) -> Option<BlockStateId> {
+        let registry = &self.pack.assets.registry;
+        let default = registry.default_state(name)?;
+        let mut state = registry.state(default)?.clone();
+        for (key, value) in properties {
+            let fits = state.properties.contains_key(*key)
+                && registry.property_values(name, key).contains(value);
+            if fits {
+                state
+                    .properties
+                    .insert((*key).to_owned(), (*value).to_owned());
+            } else if strict {
+                return None;
+            }
+        }
+        registry.id(&state)
+    }
+    /// The state at `pos` in the world this game holds; None where the
+    /// chunk isn't loaded or outside the world's height.
+    pub(super) fn native_state_at(&self, pos: [i32; 3]) -> Option<BlockStateId> {
+        let shape = &self.world.shape;
+        let inside = (shape.min_y..shape.min_y + shape.height).contains(&pos[1]);
+        (inside && self.world.loaded(pos[0], pos[2]))
+            .then(|| self.world.block(pos[0], pos[1], pos[2]))
+    }
+    /// Whether `state` is air of any kind (cave air too).
+    pub(super) fn native_state_is_air(&self, state: BlockStateId) -> bool {
+        self.ghost_state_is_air(state)
+    }
+    /// The default state of `state`'s block: two states are of the same
+    /// block when these are equal.
+    pub(super) fn native_state_block(&self, state: BlockStateId) -> BlockStateId {
+        let name = &self.res.facts().get(state).name;
+        self.pack
+            .assets
+            .registry
+            .default_state(name)
+            .unwrap_or(state)
+    }
+    /// The id of the item that places `state` (`minecraft:torch` for a wall
+    /// torch); None when no item does.
+    pub(super) fn native_state_item(&self, state: BlockStateId) -> Option<String> {
+        let item = &self.res.facts().get(state).item;
+        (!item.is_empty() && &**item != "minecraft:air").then(|| item.to_string())
+    }
+    /// The game's text for `state`, `minecraft:oak_stairs[facing=north]`.
+    pub(super) fn native_state_text(&self, state: BlockStateId) -> String {
+        self.ghost_state_text(state)
+    }
+    /// `state` mirrored (`mirror`: 0 none, 1 east-west as `Mirror.FRONT_BACK`,
+    /// 2 north-south as `LEFT_RIGHT`), then turned `turns` quarter turns
+    /// clockwise seen from above, as structures turn their blocks
+    /// (`BlockState.mirror`, `rotate`).
+    pub(super) fn native_state_transform(
+        &self,
+        state: BlockStateId,
+        mirror: u8,
+        turns: u8,
+    ) -> BlockStateId {
+        use horizon_world::worldgen::structure::{Mirror, Rotation};
+        let Some(t) = self.state_transforms() else {
+            return state;
+        };
+        let mirrored = match mirror {
+            1 => t.mirror(state, Mirror::FrontBack),
+            2 => t.mirror(state, Mirror::LeftRight),
+            _ => state,
+        };
+        let rotation = match turns % 4 {
+            1 => Rotation::Clockwise90,
+            2 => Rotation::Clockwise180,
+            3 => Rotation::Counterclockwise90,
+            _ => Rotation::None,
+        };
+        t.rotate(mirrored, rotation)
+    }
+    /// Asks the player for a file (`accept`: the chooser's types,
+    /// `.litematic,.schem`); in the browser only during a click or a key
+    /// press. The file comes later from `native_take_picked_file`, with
+    /// `kind` to tell requests apart. Nothing on the desktop.
+    pub(super) fn native_pick_file(&mut self, kind: &str, accept: &str) {
+        self.ghost_pick_file(kind, accept);
+    }
+    /// The file the player picked since the last call, if it was asked for
+    /// with `kind`: its name and bytes. Another kind's is left for its asker.
+    pub(super) fn native_take_picked_file(&mut self, kind: &str) -> Option<(String, Vec<u8>)> {
+        self.ghost_take_picked_file(kind)
     }
     /// The player, in a world.
     pub(super) fn native_player(&self) -> Option<NativePlayer> {
