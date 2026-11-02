@@ -21,6 +21,81 @@ export function horizon_clipboard_image(png) {
         return false;
     }
 }
+let recorder = null;
+let recordState = 0;
+let recordError = "";
+let recordStart = 0;
+export function horizon_recorder_supported() {
+    return !!(globalThis.MediaRecorder && HTMLCanvasElement.prototype.captureStream);
+}
+export function horizon_recorder_state() {
+    return recordState;
+}
+export function horizon_recorder_error() {
+    return recordError;
+}
+export function horizon_recorder_elapsed_ms() {
+    return recordState === 2 ? performance.now() - recordStart : 0;
+}
+export function horizon_recorder_stop() {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+}
+export function horizon_recorder_start(fps, kbps, gameVolume, mic, micVolume, name) {
+    if (recordState !== 0) return;
+    recordState = 1;
+    recordError = "";
+    (async () => {
+        const canvas = document.querySelector("canvas");
+        const video = canvas.captureStream(fps);
+        const tracks = [...video.getVideoTracks()];
+        const master = (globalThis.horizonAudioMasters || [])[0];
+        let micStream = null;
+        if (master) {
+            const ctx = master.context;
+            const out = ctx.createMediaStreamDestination();
+            const game = ctx.createGain();
+            game.gain.value = gameVolume;
+            master.connect(game);
+            game.connect(out);
+            if (mic) {
+                try {
+                    micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = ctx.createMediaStreamSource(micStream);
+                    const gain = ctx.createGain();
+                    gain.gain.value = micVolume;
+                    source.connect(gain);
+                    gain.connect(out);
+                } catch (e) {
+                    recordError = "The microphone wasn't allowed: recording without it.";
+                }
+            }
+            tracks.push(...out.stream.getAudioTracks());
+        }
+        const types = ["video/mp4;codecs=avc1,mp4a", "video/mp4", "video/webm;codecs=vp9,opus", "video/webm"];
+        const type = types.find((t) => MediaRecorder.isTypeSupported(t)) || "";
+        const chunks = [];
+        recorder = new MediaRecorder(new MediaStream(tracks), { mimeType: type, videoBitsPerSecond: kbps * 1000 });
+        recorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+        recorder.onstop = () => {
+            const ext = (recorder.mimeType || type).startsWith("video/mp4") ? ".mp4" : ".webm";
+            const a = document.createElement("a");
+            a.href = URL.createObjectURL(new Blob(chunks, { type: recorder.mimeType || type }));
+            a.download = name + ext;
+            a.click();
+            setTimeout(() => URL.revokeObjectURL(a.href), 60000);
+            if (micStream) micStream.getTracks().forEach((t) => t.stop());
+            video.getTracks().forEach((t) => t.stop());
+            recorder = null;
+            recordState = 0;
+        };
+        recorder.start(1000);
+        recordStart = performance.now();
+        recordState = 2;
+    })().catch((e) => {
+        recordError = "Recording didn't start: " + e;
+        recordState = 0;
+    });
+}
 export function horizon_utc_offset_ms() {
     return -new Date().getTimezoneOffset() * 60000;
 }
@@ -116,6 +191,19 @@ extern "C" {
     fn horizon_clipboard_image(png: &[u8]) -> bool;
     fn horizon_open_url(url: &str);
     fn horizon_utc_offset_ms() -> f64;
+    fn horizon_recorder_supported() -> bool;
+    fn horizon_recorder_state() -> u32;
+    fn horizon_recorder_error() -> String;
+    fn horizon_recorder_elapsed_ms() -> f64;
+    fn horizon_recorder_stop();
+    fn horizon_recorder_start(
+        fps: u32,
+        kbps: u32,
+        game_volume: f32,
+        mic: bool,
+        mic_volume: f32,
+        name: &str,
+    );
     fn horizon_pick_file(kind: &str, accept: &str);
     fn horizon_take_picked() -> JsValue;
     fn horizon_console(level: u32, message: &str);
@@ -221,6 +309,44 @@ pub fn clipboard_image(png: &[u8]) -> bool {
 /// The local time zone's offset from UTC, in milliseconds.
 pub fn utc_offset_ms() -> i64 {
     horizon_utc_offset_ms() as i64
+}
+
+/// Whether the page can record the canvas (`MediaRecorder`, `captureStream`).
+pub fn recorder_supported() -> bool {
+    horizon_recorder_supported()
+}
+
+/// The page's recording: 0 none, 1 starting (asking for the microphone), 2 recording.
+pub fn recorder_state() -> u32 {
+    horizon_recorder_state()
+}
+
+/// Why the last recording failed or went without the microphone ("" for nothing).
+pub fn recorder_error() -> String {
+    horizon_recorder_error()
+}
+
+/// How long the recording has gone on, in milliseconds.
+pub fn recorder_elapsed_ms() -> u64 {
+    horizon_recorder_elapsed_ms() as u64
+}
+
+/// Records the canvas, the game's sound at `game_volume` and, with `mic`, the microphone at
+/// `mic_volume`; when stopped, the video downloads as `name` with its format's extension.
+pub fn recorder_start(
+    fps: u32,
+    kbps: u32,
+    game_volume: f32,
+    mic: bool,
+    mic_volume: f32,
+    name: &str,
+) {
+    horizon_recorder_start(fps, kbps, game_volume, mic, mic_volume, name);
+}
+
+/// Stops the recording, which then downloads.
+pub fn recorder_stop() {
+    horizon_recorder_stop();
 }
 
 /// Opens `url` in a new tab.

@@ -5263,6 +5263,46 @@ impl Game<'_> {
             0
         }
     }
+    /// The page's screen recorder (the browser build only): whether there is one,
+    /// its state (0 none, 1 starting, 2 recording), why it last failed, and how
+    /// long it's recorded.
+    pub(super) fn native_recorder(&self) -> (bool, u32, String, u64) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            use horizon_os::web as w;
+            (
+                w::recorder_supported(),
+                w::recorder_state(),
+                w::recorder_error(),
+                w::recorder_elapsed_ms(),
+            )
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            (false, 0, String::new(), 0)
+        }
+    }
+    /// Starts recording the canvas, the game's sound and, with `mic`, the
+    /// microphone; it downloads as `name` when stopped.
+    pub(super) fn native_recorder_start(
+        &mut self,
+        fps: u32,
+        kbps: u32,
+        game_volume: f32,
+        mic: bool,
+        mic_volume: f32,
+        name: &str,
+    ) {
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::recorder_start(fps, kbps, game_volume, mic, mic_volume, name);
+        #[cfg(not(target_arch = "wasm32"))]
+        let _ = (fps, kbps, game_volume, mic, mic_volume, name);
+    }
+    /// Stops the recording, which then downloads.
+    pub(super) fn native_recorder_stop(&mut self) {
+        #[cfg(target_arch = "wasm32")]
+        horizon_os::web::recorder_stop();
+    }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {
         use horizon_client::clipboard::Clipboard;
