@@ -5143,6 +5143,16 @@ impl Game<'_> {
     pub(super) fn native_own_skin(&self) -> Option<(Vec<u8>, bool)> {
         self.ui_own_skin()
     }
+    /// The clipboard's text (empty with none).
+    pub(super) fn native_clipboard(&mut self) -> String {
+        use horizon_client::clipboard::Clipboard;
+        self.clipboard.get()
+    }
+    /// Copies `text` to the clipboard.
+    pub(super) fn native_set_clipboard(&mut self, text: &str) {
+        use horizon_client::clipboard::Clipboard;
+        self.clipboard.set(text);
+    }
     /// The GUI scale: window pixels per GUI pixel.
     pub(super) fn native_gui_scale(&self) -> f32 {
         self.ui_gui_scale() as f32
