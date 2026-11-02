@@ -19,6 +19,12 @@
       "cancellable": false
     },
     {
+      "name": "startup_title_claim",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_startup_title_claim",
+      "side": "client",
+      "cancellable": false
+    },
+    {
       "name": "backdrop",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_backdrop",
       "side": "client",

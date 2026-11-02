@@ -2516,6 +2516,13 @@ impl Game<'_> {
     pub(super) fn native_backdrop_claim(&self, claimed: &mut bool) {
         let _ = claimed;
     }
+    /// Whether a mod draws the title screen itself once the game exists. The
+    /// startup menu, which shows the title before then, has no mod to draw it:
+    /// set `claimed` and it draws black instead of the game's title and
+    /// panorama, so they don't flash before the mod's. Client only.
+    pub(super) fn native_startup_title_claim(claimed: &mut bool) {
+        let _ = claimed;
+    }
     /// The backdrop of the title screen and the screens over it, when
     /// `native_backdrop_claim` claimed it: drawn first into `batch`, under
     /// everything else (a screen's menu blur blurs it). Client only.

@@ -1140,6 +1140,14 @@ impl Loading {
                 .options
                 .draw(&self.settings, batch, &gui.atlas, self.menu.cursor);
         } else if let Some(title) = &mut self.menu.title {
+            let mut claimed = false;
+            Game::native_startup_title_claim(&mut claimed);
+            if claimed {
+                // Black over the frame's panorama, as the boot screen: the mod's title
+                // comes up on the game's first frame.
+                batch.fill(&gui.atlas, 0.0, 0.0, batch.width, batch.height, 0xFF00_0000);
+                return;
+            }
             title.poll_backup();
             if std::mem::take(&mut title.onboarding_finished) {
                 // Options.onboardingAccessibilityFinished.
