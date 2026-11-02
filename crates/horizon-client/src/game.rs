@@ -201,6 +201,7 @@ mod native_data_maps;
 mod native_entities;
 mod native_explosions;
 mod native_falling;
+mod native_ghosts;
 mod native_hooks;
 mod native_inventories;
 mod native_item_fluids;
@@ -2311,6 +2312,8 @@ struct Game<'a> {
     luminance: std::cell::OnceCell<horizon_client::dynamic_light::Luminance>,
     /// Name tags drawn over everything (`RenderPipelines.TEXT_SEE_THROUGH`).
     see_through_vertices: Vec<Vertex>,
+    /// Mods' ghost blocks, meshed a section at a time (`native_ghosts`).
+    ghost_meshes: native_ghosts::GhostMeshes,
     /// The first-person player's model, which only a native pack's shadow pass draws.
     shadow_only_vertices: std::cell::RefCell<Vec<Vertex>>,
     /// Runs of `entity_vertices` by entity, for a shader pack's per-entity draws; recorded only
@@ -10678,6 +10681,8 @@ impl Game<'_> {
         self.debug_renderer_geometry(camera, &mut out);
         self.text_display_geometry(camera, alpha, &mut out, &mut see_through);
         self.see_through_vertices = see_through;
+        // `native_ghosts`: a mod's see-through blocks (a schematic to build).
+        self.mod_ghost_geometry(camera, &mut out);
         // Entity shadows (EntityRenderer.extractShadow).
         self.mark_translucent_entity(out.len(), "minecraft:entity_shadow");
         // A native shader pack's sun shadows already fall under the entities in the Overworld:
@@ -18212,6 +18217,7 @@ impl<'a> Game<'a> {
             dynamic_lights: Vec::new(),
             luminance: Default::default(),
             see_through_vertices: Vec::new(),
+            ghost_meshes: Default::default(),
             shadow_only_vertices: Default::default(),
             entity_spans: Default::default(),
             entity_motion: Default::default(),

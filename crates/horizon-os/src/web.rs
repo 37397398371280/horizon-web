@@ -101,7 +101,7 @@ export function horizon_pick_file(kind, accept) {
     input.accept = accept;
     input.onchange = async () => {
         const file = input.files && input.files[0];
-        if (file) picked = [kind, new Uint8Array(await file.arrayBuffer())];
+        if (file) picked = [kind, new Uint8Array(await file.arrayBuffer()), file.name];
     };
     input.click();
 }
@@ -109,6 +109,9 @@ export function horizon_take_picked() {
     const p = picked;
     picked = null;
     return p;
+}
+export function horizon_picked_kind() {
+    return picked ? picked[0] : undefined;
 }
 "#)]
 extern "C" {
@@ -118,6 +121,7 @@ extern "C" {
     fn horizon_utc_offset_ms() -> f64;
     fn horizon_pick_file(kind: &str, accept: &str);
     fn horizon_take_picked() -> JsValue;
+    fn horizon_picked_kind() -> Option<String>;
     fn horizon_console(level: u32, message: &str);
     fn horizon_pointer_lock(want: bool);
     fn horizon_pointer_lock_lost() -> bool;
@@ -269,4 +273,16 @@ pub fn take_picked_file() -> Option<(String, Vec<u8>)> {
     let picked = js_sys::Array::from(&picked);
     let kind = picked.get(0).as_string()?;
     Some((kind, js_sys::Uint8Array::new(&picked.get(1)).to_vec()))
+}
+
+/// The file the player picked since the last call, if it was asked for with
+/// `kind`: its name (without its folder) and bytes. Another kind's is left for
+/// [`take_picked_file`] or its own asker.
+pub fn take_picked_named(kind: &str) -> Option<(String, Vec<u8>)> {
+    if horizon_picked_kind().as_deref() != Some(kind) {
+        return None;
+    }
+    let picked = js_sys::Array::from(&horizon_take_picked());
+    let name = picked.get(2).as_string().unwrap_or_default();
+    Some((name, js_sys::Uint8Array::new(&picked.get(1)).to_vec()))
 }
