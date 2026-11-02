@@ -836,18 +836,27 @@ pub fn paint(batch: &mut crate::hud::HudBatch, atlas: &crate::hud::HudAtlas, dra
                 let Some(mut r) = found else {
                     continue;
                 };
-                if let Some([sw, sh, u, v]) = *region {
-                    let (du, dv) = (r.u1 - r.u0, r.v1 - r.v0);
-                    let u0 = r.u0 + du * u as f32 / sw as f32;
-                    let v0 = r.v0 + dv * v as f32 / sh as f32;
-                    r.u1 = u0 + du * *w as f32 / sw as f32;
-                    r.v1 = v0 + dv * *h as f32 / sh as f32;
-                    r.u0 = u0;
-                    r.v0 = v0;
-                }
-                batch.rect_uv(*x as f32, *y as f32, *w as f32, *h as f32, r, abgr(*color));
-                if *blend == Blend::Crosshair {
-                    batch.invert_since(start);
+                // A GUI skin draws whole sprites its own way (the hotbar, effects' backgrounds).
+                let rect = [*x as f32, *y as f32, *w as f32, *h as f32];
+                if region.is_none()
+                    && *blend != Blend::Crosshair
+                    && crate::hud::skinned(batch, atlas, &name, rect, *color)
+                {
+                    // Fall through to the pose below with what the skin drew.
+                } else {
+                    if let Some([sw, sh, u, v]) = *region {
+                        let (du, dv) = (r.u1 - r.u0, r.v1 - r.v0);
+                        let u0 = r.u0 + du * u as f32 / sw as f32;
+                        let v0 = r.v0 + dv * v as f32 / sh as f32;
+                        r.u1 = u0 + du * *w as f32 / sw as f32;
+                        r.v1 = v0 + dv * *h as f32 / sh as f32;
+                        r.u0 = u0;
+                        r.v0 = v0;
+                    }
+                    batch.rect_uv(*x as f32, *y as f32, *w as f32, *h as f32, r, abgr(*color));
+                    if *blend == Blend::Crosshair {
+                        batch.invert_since(start);
+                    }
                 }
             }
             GuiDraw::AtlasSprite {
