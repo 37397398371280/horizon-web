@@ -21,6 +21,9 @@ export function horizon_clipboard_image(png) {
         return false;
     }
 }
+export function horizon_utc_offset_ms() {
+    return -new Date().getTimezoneOffset() * 60000;
+}
 export function horizon_open_url(url) {
     window.open(url, "_blank", "noopener,noreferrer");
 }
@@ -112,6 +115,7 @@ extern "C" {
     fn horizon_download(name: &str, bytes: &[u8]);
     fn horizon_clipboard_image(png: &[u8]) -> bool;
     fn horizon_open_url(url: &str);
+    fn horizon_utc_offset_ms() -> f64;
     fn horizon_pick_file(kind: &str, accept: &str);
     fn horizon_take_picked() -> JsValue;
     fn horizon_console(level: u32, message: &str);
@@ -212,6 +216,11 @@ pub fn download(name: &str, bytes: &[u8]) {
 /// Puts a PNG on the clipboard as an image; false where the browser can't.
 pub fn clipboard_image(png: &[u8]) -> bool {
     horizon_clipboard_image(png)
+}
+
+/// The local time zone's offset from UTC, in milliseconds.
+pub fn utc_offset_ms() -> i64 {
+    horizon_utc_offset_ms() as i64
 }
 
 /// Opens `url` in a new tab.

@@ -9919,6 +9919,17 @@ impl horizon_client::interaction_input::InteractionWorld for RemoteInputWorld<'_
 }
 
 impl Remote {
+    /// The players listed in the tab list, by UUID, with their names.
+    pub(super) fn tab_names(&self) -> HashMap<u128, String> {
+        self.players
+            .iter()
+            .filter(|(u, _)| self.listed.contains(u))
+            .map(|(u, n)| (*u, n.clone()))
+            .collect()
+    }
+}
+
+impl Remote {
     /// `PlayerInfo.getMessageValidator().updateAndValidate(message)` for `message.sender`.
     fn validate_chat(
         &mut self,

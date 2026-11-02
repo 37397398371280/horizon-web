@@ -5220,6 +5220,31 @@ impl Game<'_> {
         self.server_address()
             .map(|a| format!("server/{}", a.to_lowercase()))
     }
+    /// The players the server lists in its tab list, by UUID, with their
+    /// names; empty outside a server.
+    pub(super) fn native_tab_players(&self) -> std::collections::HashMap<u128, String> {
+        self.remote
+            .as_ref()
+            .map(|r| r.tab_names())
+            .unwrap_or_default()
+    }
+    /// The server played on, as its address was given; None in single player.
+    pub(super) fn native_server_address(&self) -> Option<String> {
+        self.remote.as_ref()?;
+        self.server_address().map(str::to_owned)
+    }
+    /// The local time zone's offset from UTC in milliseconds (0 where it
+    /// can't be told).
+    pub(super) fn native_utc_offset_ms(&self) -> i64 {
+        #[cfg(target_arch = "wasm32")]
+        {
+            horizon_os::web::utc_offset_ms()
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            0
+        }
+    }
     /// The clipboard's text (empty with none).
     pub(super) fn native_clipboard(&mut self) -> String {
         use horizon_client::clipboard::Clipboard;
