@@ -83,15 +83,25 @@ enum BitmapGlyph {
     Atlas(Glyph),
     Sheet(SheetCell),
 }
-/// `TrueTypeGlyphProvider`.
+/// `TrueTypeGlyphProvider`, drawn at the GUI scale (`Font::set_gui_scale`) once one is set: a
+/// glyph shown three screen pixels a GUI pixel is rasterized at three times its size, so it stays
+/// sharp where one drawn at the file's `oversample` and stretched would blur and space unevenly.
 struct TrueType {
     font: ab_glyph::FontVec,
     ids: HashMap<char, ab_glyph::GlyphId>,
-    /// FT_Set_Pixel_Sizes: `size * oversample` pixels to the em.
-    scale: ab_glyph::PxScale,
-    oversample: f32,
-    /// FT_Set_Transform's delta, in oversampled pixels (y down).
+    /// `size` in GUI pixels to the em, and the font's height over its em (ab_glyph scales by
+    /// the font's height; FreeType by its em).
+    size: f32,
+    height_per_em: f32,
+    /// The file's oversample, used until a GUI scale is set.
+    file_oversample: f32,
+    /// FT_Set_Transform's delta, in GUI pixels (y down).
     shift: (f32, f32),
+}
+
+thread_local! {
+    /// The GUI scale TrueType glyphs are drawn at (0: the files' own oversample).
+    static GUI_SCALE: std::cell::Cell<f32> = const { std::cell::Cell::new(0.0) };
 }
 enum Provider {
     Space(HashMap<char, f32>),
@@ -393,30 +403,42 @@ fn load_true_type(root: &Path, p: &serde_json::Value) -> Option<TrueType> {
         .filter(|(id, c)| id.0 != 0 && !skip.contains(c))
         .map(|(id, c)| (c, id))
         .collect();
-    let pixels_per_em = (size * oversample).round();
-    // ab_glyph scales by the font's height; FreeType by its em.
     let units = font.units_per_em().unwrap_or(1000.0);
-    let scale = ab_glyph::PxScale::from(pixels_per_em * font.height_unscaled() / units);
+    let height_per_em = font.height_unscaled() / units;
     Some(TrueType {
         font,
         ids,
-        scale,
-        oversample,
-        shift: (shift.0 * oversample, shift.1 * oversample),
+        size,
+        height_per_em,
+        file_oversample: oversample,
+        shift,
     })
 }
 impl TrueType {
+    /// Screen pixels a GUI pixel: the GUI scale, else the file's oversample.
+    fn oversample(&self) -> f32 {
+        let gui = GUI_SCALE.with(|s| s.get());
+        if gui > 0.0 { gui } else { self.file_oversample }
+    }
+    /// FT_Set_Pixel_Sizes: `size * oversample` pixels to the em.
+    fn scale(&self) -> ab_glyph::PxScale {
+        let pixels_per_em = (self.size * self.oversample()).round();
+        ab_glyph::PxScale::from(pixels_per_em * self.height_per_em)
+    }
     /// The advance in GUI pixels: hinted FreeType advances are whole
     /// oversampled pixels.
     fn advance(&self, id: ab_glyph::GlyphId) -> f32 {
-        self.font.as_scaled(self.scale).h_advance(id).round() / self.oversample
+        self.font.as_scaled(self.scale()).h_advance(id).round() / self.oversample()
     }
     /// `loadGlyph` and its bitmap: the grey coverage as `rrrr` texels
     /// (`text_intensity`), below 0.1 cut (its discard).
     fn glyph(&self, id: ab_glyph::GlyphId) -> (Glyph, Option<(u32, u32, Vec<u8>)>) {
         let advance = self.advance(id);
-        let glyph =
-            id.with_scale_and_position(self.scale, ab_glyph::point(self.shift.0, self.shift.1));
+        let os = self.oversample();
+        let glyph = id.with_scale_and_position(
+            self.scale(),
+            ab_glyph::point(self.shift.0 * os, self.shift.1 * os),
+        );
         let empty = Glyph {
             rect: None,
             left: 0.0,
@@ -446,7 +468,6 @@ impl TrueType {
                 px.copy_from_slice(&[v; 4]);
             }
         });
-        let os = self.oversample;
         // GlyphBitmap: bitmap_left / bitmap_top over the oversampling, and
         // top = 7 - bearingTop.
         let (left, top) = (bounds.min.x / os, 7.0 + bounds.min.y / os);
@@ -680,6 +701,13 @@ impl Font {
         cache.region.row = 0;
         cache.region.full = false;
         self.generation.set(next_generation());
+    }
+    /// Draws TrueType glyphs `scale` screen pixels a GUI pixel from now on
+    /// (the window's GUI scale), forgetting those drawn at another.
+    pub fn set_gui_scale(&self, scale: f32) {
+        if GUI_SCALE.with(|s| s.replace(scale)) != scale {
+            self.reset_cache();
+        }
     }
     /// Call once per frame before any text is laid out. When the dynamic
     /// region ran out of room (vanilla's glyph textures grow instead), the

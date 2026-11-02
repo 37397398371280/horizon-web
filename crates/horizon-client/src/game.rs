@@ -14986,7 +14986,10 @@ impl Game<'_> {
         });
     }
     fn render(&mut self) -> Result<bool> {
-        // Before any text of this frame: a full glyph region starts over.
+        // Before any text of this frame: TrueType glyphs drawn at this GUI scale, and a full
+        // glyph region starts over.
+        let scale = self.ui_gui_scale() as f32;
+        self.gui.atlas.font.set_gui_scale(scale);
         self.gui.atlas.font.begin_frame();
         self.glint_frame = self.capture_glint_frame();
         if self.renderer.as_mut().is_some_and(|r| r.display_changed()) {
