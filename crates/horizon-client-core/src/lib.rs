@@ -10,6 +10,7 @@ pub mod bossbar;
 pub mod component;
 pub mod fastutil_order;
 pub mod gamerules;
+pub mod hidden_passwords;
 pub mod identifier;
 pub mod key_display;
 pub mod lang;

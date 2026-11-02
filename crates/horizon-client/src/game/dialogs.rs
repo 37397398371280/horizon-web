@@ -508,7 +508,24 @@ impl Game<'_> {
                             if widgets::narrating() {
                                 edit.message = label;
                             }
-                            edit.draw(batch, atlas, None);
+                            // A box whose label names a password shows stars (Incari).
+                            let stars = match &open.dialog.inputs[input].control {
+                                Control::Text { label, .. }
+                                    if horizon_client_core::hidden_passwords::is_password_label(
+                                        &label.plain(),
+                                    ) =>
+                                {
+                                    Some(Text::literal(
+                                        horizon_client_core::hidden_passwords::starred(
+                                            &edit.value,
+                                            0,
+                                            0,
+                                        ),
+                                    ))
+                                }
+                                _ => None,
+                            };
+                            edit.draw(batch, atlas, stars.as_ref());
                         }
                         Some(Some(Field::Multi(edit))) => {
                             [edit.x, edit.y, edit.width, edit.height] = rect;

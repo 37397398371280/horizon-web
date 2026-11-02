@@ -512,13 +512,22 @@ impl Chat {
     pub fn load_history(&mut self, game_folder: &std::path::Path) {
         let file = game_folder.join(COMMAND_HISTORY_FILE);
         if let Ok(text) = horizon_os::fs::read_to_string(&file) {
-            self.commands = text.lines().map(str::to_owned).collect();
+            // A password kept by an older run stays out (Incari).
+            self.commands = text
+                .lines()
+                .filter(|l| !horizon_client_core::hidden_passwords::has_password(l))
+                .map(str::to_owned)
+                .collect();
             self.recent.extend(self.commands.iter().cloned());
         }
         self.history_file = Some(file);
     }
     /// `ChatComponent.addRecentChat`: a command also goes to the saved history.
     pub fn add_recent(&mut self, message: &str) {
+        // A password stays out of the history: the up arrow and the file would show it (Incari).
+        if horizon_client_core::hidden_passwords::has_password(message) {
+            return;
+        }
         if self.recent.last().map(String::as_str) != Some(message) {
             if self.recent.len() >= 100 {
                 self.recent.remove(0);
@@ -1683,6 +1692,12 @@ impl ChatScreen {
     }
     /// `CommandSuggestions.formatText`: argument colours over the input.
     fn format(&self, value: &str, offset: usize) -> Text {
+        // A login command's password as stars, ahead of the command colouring (Incari).
+        if let Some(from) = horizon_client_core::hidden_passwords::hidden_from(&self.input.value) {
+            return Text::literal(horizon_client_core::hidden_passwords::starred(
+                value, offset, from,
+            ));
+        }
         let gray = Style::color(text::GRAY);
         let Some(parse) = &self.parse else {
             return Text::literal(value);
