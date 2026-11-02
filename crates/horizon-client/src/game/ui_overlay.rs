@@ -139,6 +139,14 @@ impl Game<'_> {
     pub(super) fn ui_external_server(&self) -> bool {
         self.player.is_some() && self.external_server()
     }
+    /// `native_own_skin`: the profile's skin (64 by 64 RGBA) and whether its arms are slim.
+    pub(super) fn ui_own_skin(&self) -> Option<(Vec<u8>, bool)> {
+        let dir = horizon_os::env::current_dir().unwrap_or_default();
+        let profile = horizon_client::profile::load(&dir)
+            .unwrap_or_else(|| horizon_client::profile::Profile::new(&dir));
+        let pixels = horizon_client::profile::skin_pixels(&dir, &self.vanilla_root(), &profile)?;
+        Some((pixels, profile.slim))
+    }
     /// `native_gui_scale`.
     pub(super) fn ui_gui_scale(&self) -> f64 {
         let size = self

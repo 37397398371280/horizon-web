@@ -5138,6 +5138,11 @@ impl Game<'_> {
     pub(super) fn native_external_server(&self) -> bool {
         self.ui_external_server()
     }
+    /// The player's skin as their profile has it: 64 by 64 RGBA pixels, and
+    /// whether its arms are slim. Read from the files each call.
+    pub(super) fn native_own_skin(&self) -> Option<(Vec<u8>, bool)> {
+        self.ui_own_skin()
+    }
     /// The GUI scale: window pixels per GUI pixel.
     pub(super) fn native_gui_scale(&self) -> f32 {
         self.ui_gui_scale() as f32
