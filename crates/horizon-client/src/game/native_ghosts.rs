@@ -393,22 +393,6 @@ fn section_distance_sq(s: [i32; 3], at: [f64; 3]) -> f64 {
         .sum()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sections_are_measured_from_their_nearest_point() {
-        assert_eq!(section_distance_sq([0, 0, 0], [8.0, 8.0, 8.0]), 0.0);
-        assert_eq!(section_distance_sq([1, 0, 0], [8.0, 8.0, 8.0]), 64.0);
-        assert_eq!(section_distance_sq([-1, 0, 0], [0.0, 8.0, 8.0]), 0.0);
-        assert_eq!(
-            direction_offset(horizon_assets::model::Direction::North),
-            [0, 0, -1]
-        );
-    }
-}
-
 /// The block-state and file helpers' bodies: the hook points stay free of `cfg`s and macros.
 impl super::Game<'_> {
     pub(super) fn ghost_state_is_air(&self, state: BlockStateId) -> bool {
@@ -447,5 +431,21 @@ impl super::Game<'_> {
             let _ = kind;
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sections_are_measured_from_their_nearest_point() {
+        assert_eq!(section_distance_sq([0, 0, 0], [8.0, 8.0, 8.0]), 0.0);
+        assert_eq!(section_distance_sq([1, 0, 0], [8.0, 8.0, 8.0]), 64.0);
+        assert_eq!(section_distance_sq([-1, 0, 0], [0.0, 8.0, 8.0]), 0.0);
+        assert_eq!(
+            direction_offset(horizon_assets::model::Direction::North),
+            [0, 0, -1]
+        );
     }
 }

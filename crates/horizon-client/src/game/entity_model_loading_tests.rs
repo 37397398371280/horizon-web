@@ -144,7 +144,10 @@ fn optimized(root: &Path) -> BTreeMap<String, Part> {
         } else {
             "armor_stand"
         };
-        models.insert(format!("{model}/{slot}"), part);
+        models.insert(
+            format!("{model}/{slot}"),
+            std::sync::Arc::unwrap_or_clone(part),
+        );
     }
     for (slot, part) in armor.player {
         models.insert(format!("player/{slot}"), part);
@@ -154,7 +157,10 @@ fn optimized(root: &Path) -> BTreeMap<String, Part> {
         ("armor_stand_small", armor.small),
     ] {
         if let Some(part) = part {
-            models.insert(format!("{model}/main"), part);
+            models.insert(
+                format!("{model}/main"),
+                std::sync::Arc::unwrap_or_clone(part),
+            );
         }
     }
     models

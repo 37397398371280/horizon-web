@@ -117,7 +117,8 @@ type Main = Box<dyn FnOnce() + Send>;
 /// The threads that run as green threads (by name, or its start): single
 /// player's server and its connection through memory, whose waits all go
 /// through horizon-os, which gives the page back, the server's region writer,
-/// and its loads that never wait. std's own waits (`recv()`,
+/// its world's preparation (which the server thread joins), and its loads that
+/// never wait. std's own waits (`recv()`,
 /// `Condvar::wait`, `park`) can't: without threads they return at once and a
 /// loop on them would hold the page forever. Other threads fail to start, as
 /// std's do, and the game does their work on the page instead.
@@ -128,6 +129,7 @@ const GREEN: &[&str] = &[
     "horizon-net",
     "Profile fetcher",
     "Worldgen loader",
+    "World initialization",
     "horizon-region-writer",
 ];
 

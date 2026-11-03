@@ -9,6 +9,7 @@ description = "Horizon version-specific model and resource decoding"
 [dependencies]
 horizon-os = { path = "../horizon-os" }
 horizon-core = { path = "../horizon-core" }
+log = "0.4"
 serde = "1.0.229"
 serde_json = { version = "1.0.151", features = ["raw_value"] }
 

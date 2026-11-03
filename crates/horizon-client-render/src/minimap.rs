@@ -561,6 +561,7 @@ mod tests {
         let facts = BlockFacts {
             states: Vec::new(),
             air: horizon_world::registry::BlockStateId(0),
+            woods: Default::default(),
         };
         let mut world = world_with(
             (-2..=2)
@@ -648,6 +649,7 @@ mod tests {
         let facts = BlockFacts {
             states: Vec::new(),
             air: horizon_world::registry::BlockStateId(0),
+            woods: Default::default(),
         };
         // Grass everywhere, one stone block 10 blocks north of the player.
         let mut world = world_with(

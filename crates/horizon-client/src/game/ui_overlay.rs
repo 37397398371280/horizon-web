@@ -28,7 +28,7 @@ impl Game<'_> {
                 _ => "title_other",
             };
         }
-        if self.remote_loading() || self.loading_reason().is_some() {
+        if self.remote_loading() {
             return "loading";
         }
         self.screen.id()

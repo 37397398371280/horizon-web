@@ -8,6 +8,7 @@ description = "OptiFine-format resource pack files: .properties, the name, range
 
 [dependencies]
 horizon-os = { path = "../horizon-os" }
+horizon-core = { path = "../horizon-core" }
 log = "0.4"
 regex = { version = "1", default-features = false, features = ["std", "unicode-perl", "unicode-case"] }
 

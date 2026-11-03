@@ -183,6 +183,7 @@ struct Decode {
     key: String,
     file: PathBuf,
     channel: ChannelId,
+    looping: bool,
 }
 /// Give a channel waiting on its sound the decoded samples and start it, as
 /// the buffer future attaching and playing the source. A source stopped or
@@ -440,7 +441,7 @@ impl Backend for MixerBackend {
         let key = format!("{namespace}:{path}");
         let cached = lock(&self.cache).ok().and_then(|mut c| c.get(&key));
         if let Some(samples) = cached {
-            attach(&self.mixer, channel, samples, false);
+            attach(&self.mixer, channel, samples, looping);
             return;
         }
         let decoder = self.decoder.get_or_insert_with(|| {
@@ -459,13 +460,18 @@ impl Backend for MixerBackend {
                             }
                             samples
                         });
-                        attach(&mixer, job.channel, samples, false);
+                        attach(&mixer, job.channel, samples, job.looping);
                     }
                 })
                 .expect("sound decoder thread");
             send
         });
-        let _ = decoder.send(Decode { key, file, channel });
+        let _ = decoder.send(Decode {
+            key,
+            file,
+            channel,
+            looping,
+        });
     }
     /// `alSourceStop`: any state becomes stopped, an initial source too (a
     /// sound still decoding then never starts).
@@ -1225,8 +1231,13 @@ impl Audio {
     /// `SoundManager.reload` (resource packs changed): stop every sound, then
     /// read sound events and sound files from the new resource root.
     pub fn reload(&mut self, root: &Path) {
+        self.reload_with(root, SoundRegistry::load(root));
+    }
+    /// [`Self::reload`] with the root's sound events already read
+    /// (`SoundRegistry::load`, which a pack reload runs off the render thread).
+    pub fn reload_with(&mut self, root: &Path, registry: SoundRegistry) {
         self.stop_all();
-        self.engine.registry = SoundRegistry::load(root);
+        self.engine.registry = registry;
         self.backend.root = root.to_owned();
         let mut cache = lock(&self.backend.cache).unwrap();
         cache.entries.clear();

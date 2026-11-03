@@ -48,6 +48,19 @@ pub mod time {
     pub fn to_std(t: SystemTime) -> std::time::SystemTime {
         std::time::UNIX_EPOCH + t.duration_since(UNIX_EPOCH).unwrap_or_default()
     }
+
+    /// std's `SystemTime` (from chrono) as this clock's: the identity on native.
+    pub fn from_std(t: std::time::SystemTime) -> SystemTime {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            t
+        }
+        #[cfg(target_arch = "wasm32")]
+        match t.duration_since(std::time::UNIX_EPOCH) {
+            Ok(after) => UNIX_EPOCH + after,
+            Err(before) => UNIX_EPOCH - before.duration(),
+        }
+    }
 }
 
 /// std's threads. On the page, scoped threads run one after another on the

@@ -4,97 +4,145 @@
       "name": "hurt_tilt",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_hurt_tilt",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "fire_overlay",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_fire_overlay",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "attack_reach",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_attack_reach",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "hand_pose",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_hand_pose",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "item_pose",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_item_pose",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "movement_keys",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_movement_keys",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "player_attacked",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_player_attacked",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "mob_died",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_mob_died",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "turn",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_turn",
       "side": "client",
-      "cancellable": true
+      "cancellable": true,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "camera_rotation",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_camera_rotation",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "seen_weather",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_seen_weather",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "seen_day_time",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_seen_day_time",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "lines",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_lines",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "sidebar_place",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_sidebar_place",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "hit_color",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_hit_color",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     },
     {
       "name": "glint_color",
       "target": "horizon_client::game::native_hooks::Game<'_>::native_glint_color",
       "side": "client",
-      "cancellable": false
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
     }
   ],
   "rust_summary": "client hooks and player state for PvP client mods: view hooks (`native_hurt_tilt`, `native_fire_overlay`,\n`native_hand_pose`, `native_item_pose`, `native_camera_rotation`, `native_seen_weather`, `native_seen_day_time`,\n`native_hit_color`, `native_glint_color`, `native_lines`, `native_sidebar_place`), input and events (`native_turn`,\n`native_movement_keys`, `native_attack_reach`, `native_player_attacked`, `native_mob_died`), the player's and the\nworld's state as client mods read it (`native_attack_strength`, `native_food`, `native_effect`, `native_equipped`,\n`native_max_damage`, `native_item_count`, `native_item_cooldown`, `native_entity`, `native_targeted_entity`,\n`native_project`, `native_camera_type`, `native_programmer_art`) and client actions (`native_set_fullbright`,\n`native_set_chat_background`, `native_spawn_particle`, `native_stack`, `native_set_camera_type`,\n`native_set_programmer_art`).",

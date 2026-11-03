@@ -258,9 +258,11 @@ world `Test` in creative mode at start.
   protocol is EaglerSPRelay's version 1; what goes over the channel is
   Horizon's own, so shared worlds are between Horizon pages, not Eaglercraft
   1.8 clients.
-- **Chunk work** (`streaming.rs`): chunk workers are Web Workers. Without
-  threads (`THREADS=0`), the frame runs queued generation, lighting and meshing
-  jobs itself for up to 12 ms per update.
+- **Chunk work** (`streaming.rs` on `horizon_threads::jobs`, the process's one
+  job pool): the pool's workers are Web Workers, and the page never waits for
+  them (a streamer leaving the pool spins until its running jobs end). Without
+  threads (`THREADS=0`), the frame runs the pool's queued generation, lighting
+  and meshing jobs itself (`Pool::pump`) for up to 12 ms per update.
 - **Shaders**: browsers enforce WGSL rules that native wgpu doesn't
   (derivative uniformity, parentheses between `<<` and `|`); `hud.wgsl` and the
   entity shader turn the uniformity check off, which changes nothing they draw.
