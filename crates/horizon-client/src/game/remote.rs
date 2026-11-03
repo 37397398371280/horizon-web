@@ -1213,6 +1213,7 @@ impl Game<'_> {
             Some(reason) => horizon_client::multiplayer::Screen::Disconnected {
                 reason,
                 retry: None,
+                rejoin: Default::default(),
             },
             None => horizon_client::multiplayer::Screen::list(&saves),
         });

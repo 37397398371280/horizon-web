@@ -111,6 +111,42 @@ pub struct Tracker {
     attempts: usize,
     joined: Option<Instant>,
 }
+impl Tracker {
+    /// Incari's Auto Reconnect: like [`Tracker::ended`], but kicks and
+    /// refusals are retried too (the player asked for it on the Disconnected
+    /// screen), and the server is kept after the last attempt so Reconnect
+    /// still can.
+    pub fn ended_any(&mut self, now: Instant) -> Option<Retry> {
+        if self
+            .joined
+            .take()
+            .is_some_and(|t| now.saturating_duration_since(t) >= STABLE)
+        {
+            self.attempts = 0;
+        }
+        if self.attempts >= DELAYS.len() {
+            return None;
+        }
+        let delay = Duration::from_secs(DELAYS[self.attempts]);
+        self.attempts += 1;
+        self.attempt_at(now + delay)
+    }
+    /// An attempt at the last server at `at` (Reconnect: now), counted as
+    /// the attempt it is.
+    pub fn attempt_at(&self, at: Instant) -> Option<Retry> {
+        Some(Retry {
+            address: self.address.clone()?,
+            name: self.name.clone(),
+            lan: self.lan,
+            at,
+            attempt: self.attempts.max(1),
+        })
+    }
+    /// Turning Auto Reconnect on: counting starts again.
+    pub fn restart(&mut self) {
+        self.attempts = 0;
+    }
+}
 /// A planned attempt.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Retry {
@@ -199,6 +235,22 @@ impl Tracker {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_reconnect_retries_kicks_and_keeps_the_server() {
+        let mut t = Tracker::default();
+        let now = Instant::now();
+        t.connecting("example.org", "Tester", false);
+        let mut delays = Vec::new();
+        while let Some(r) = t.ended_any(now) {
+            delays.push(r.seconds_left(now));
+        }
+        assert_eq!(delays, DELAYS);
+        assert_eq!(t.address(), Some("example.org"), "Reconnect can still join it");
+        assert_eq!(t.attempt_at(now).unwrap().address, "example.org");
+        t.restart();
+        assert_eq!(t.ended_any(now).unwrap().seconds_left(now), DELAYS[0]);
+    }
 
     #[test]
     fn reconnect_keeps_the_selected_server_kind() {

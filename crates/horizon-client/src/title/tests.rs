@@ -2429,6 +2429,7 @@ fn the_multiplayer_screens_have_their_own_ids() {
         M::Disconnected {
             reason: String::new(),
             retry: None,
+            rejoin: Default::default(),
         }
         .id(),
         "disconnected"

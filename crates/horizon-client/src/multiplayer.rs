@@ -130,7 +130,29 @@ pub enum Screen {
         reason: String,
         /// Auto-reconnect's next attempt, until it is cancelled.
         retry: Option<crate::reconnect::Retry>,
+        /// Reconnect and Auto Reconnect, as Incari's client has them.
+        rejoin: Rejoin,
     },
+}
+/// The Disconnected screen's Reconnect and Auto Reconnect buttons (Incari's
+/// client, ADR 0069): the game says whether there is a server to join again
+/// and what the setting is, and takes what the player clicked.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Rejoin {
+    /// A server to join again: both buttons show.
+    pub offered: bool,
+    /// Auto Reconnect's setting (`autoReconnect`), as its button shows it.
+    pub auto: bool,
+    /// What the player clicked, until the game takes it (`take_asked`).
+    pub asked: Option<Asked>,
+}
+/// A click on the Disconnected screen for the game to act on.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Asked {
+    /// Join the server again now.
+    Reconnect,
+    /// Turn Auto Reconnect on or off.
+    ToggleAuto,
 }
 /// What a click asks the title screen to do.
 pub enum Outcome {
@@ -916,7 +938,7 @@ impl Screen {
                     57,
                 ),
             ],
-            Self::Disconnected { retry, .. } => {
+            Self::Disconnected { retry, rejoin, .. } => {
                 let mut v = vec![b(
                     half(w) - 100.0,
                     half(h) + 30.0,
@@ -925,7 +947,24 @@ impl Screen {
                     true,
                     54,
                 )];
-                if retry.is_some() {
+                if rejoin.offered {
+                    v.push(b(
+                        half(w) - 100.0,
+                        half(h) + 54.0,
+                        200.0,
+                        &crate::lang::get_or("horizon.multiplayer.reconnect", "Reconnect"),
+                        true,
+                        60,
+                    ));
+                    v.push(b(
+                        half(w) - 100.0,
+                        half(h) + 78.0,
+                        200.0,
+                        &auto_reconnect_label(rejoin.auto, retry.as_ref()),
+                        true,
+                        61,
+                    ));
+                } else if retry.is_some() {
                     v.push(b(
                         half(w) - 100.0,
                         half(h) + 54.0,
@@ -1506,7 +1545,7 @@ impl Screen {
                     *focus == 1,
                 );
             }
-            Self::Disconnected { reason, retry } => {
+            Self::Disconnected { reason, retry, rejoin } => {
                 centered(
                     batch,
                     &crate::lang::get_or("disconnect.lost", "Connection Lost"),
@@ -1516,7 +1555,8 @@ impl Screen {
                 for (i, line) in wrap(reason, 300.0, atlas).iter().enumerate() {
                     centered(batch, line, half(h) - 16.0 + i as f32 * 9.0, u32::MAX);
                 }
-                if let Some(r) = retry {
+                // With Auto Reconnect's button, its label counts down instead.
+                if let Some(r) = retry.as_ref().filter(|_| !rejoin.offered) {
                     let text = r.text(horizon_os::time::Instant::now());
                     centered(batch, &text, half(h) + 16.0, rgba(170, 170, 170, 255));
                 }
@@ -1760,6 +1800,8 @@ impl Screen {
                 Some(51 | 53 | 54 | 57),
             ) => *self = Self::list(saves),
             (Self::Disconnected { retry, .. }, Some(55)) => *retry = None,
+            (Self::Disconnected { rejoin, .. }, Some(60)) => rejoin.asked = Some(Asked::Reconnect),
+            (Self::Disconnected { rejoin, .. }, Some(61)) => rejoin.asked = Some(Asked::ToggleAuto),
             (Self::Direct { address }, Some(52)) => {
                 return Outcome::Connect {
                     address: direct_address(address),
@@ -1959,6 +2001,13 @@ impl Screen {
             focus: 0,
         }
     }
+    /// What the player last clicked on the Disconnected screen, once.
+    pub fn take_asked(&mut self) -> Option<Asked> {
+        match self {
+            Self::Disconnected { rejoin, .. } => rejoin.asked.take(),
+            _ => None,
+        }
+    }
     /// Auto-reconnect's attempt, once its countdown is over.
     pub fn due_retry(&mut self) -> Option<crate::reconnect::Retry> {
         let Self::Disconnected { retry, .. } = self else {
@@ -2085,6 +2134,16 @@ fn shared_code(code: &str) -> Option<String> {
         .then(|| code.to_owned())
 }
 
+/// Auto Reconnect's label: Off, the countdown's seconds, or On between
+/// attempts (after the last one, or while connecting).
+fn auto_reconnect_label(on: bool, retry: Option<&crate::reconnect::Retry>) -> String {
+    let name = crate::lang::get_or("horizon.multiplayer.auto_reconnect", "Auto Reconnect");
+    match (on, retry) {
+        (false, _) => format!("{name}: {}", crate::lang::get_or("options.off", "OFF")),
+        (true, Some(r)) => format!("{name}: {}s", r.seconds_left(horizon_os::time::Instant::now())),
+        (true, None) => format!("{name}: {}", crate::lang::get_or("options.on", "ON")),
+    }
+}
 /// Direct Connection's address; a full invite code pasted there joins the
 /// friend (a short relay code could be a host name, so it needs Join a Friend).
 fn direct_address(address: &str) -> String {
@@ -2269,11 +2328,19 @@ mod tests {
             focus: 0,
         };
         assert_eq!(at(&friend, 427.0, 253.0), [(113.0, 177.0), (113.0, 201.0)]);
-        let lost = Screen::Disconnected {
+        let mut lost = Screen::Disconnected {
             reason: String::new(),
             retry: None,
+            rejoin: Rejoin::default(),
         };
         assert_eq!(at(&lost, 427.0, 253.0), [(113.0, 156.0)]);
+        if let Screen::Disconnected { rejoin, .. } = &mut lost {
+            rejoin.offered = true;
+        }
+        assert_eq!(
+            at(&lost, 427.0, 253.0),
+            [(113.0, 156.0), (113.0, 180.0), (113.0, 204.0)]
+        );
         // centeredText: `width / 2 - font.width(text) / 2`.
         assert_eq!(centered_x(427.0, 85.0), 171.0);
         assert_eq!(centered_x(320.0, 84.0), 118.0);
