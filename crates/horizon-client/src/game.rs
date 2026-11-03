@@ -125,6 +125,7 @@ mod events;
 mod execution_role;
 mod explosion;
 mod extras;
+mod f_chord;
 mod falling_damage;
 mod fangs;
 mod fireworks;
@@ -2420,6 +2421,9 @@ struct Game<'a> {
     keys: HashSet<KeyCode>,
     // Physical input is separate from remapped and toggled movement keys.
     physical_keys: HashSet<KeyCode>,
+    /// F then a digit as a function key (`f_chord.rs`), and the F press it holds back.
+    f_chord: f_chord::FChord,
+    held_f: Option<(DeviceId, winit::event::KeyEvent)>,
     physical_buttons: HashSet<MouseButton>,
     drag_button: Option<MouseButton>,
     /// Control + left click as a right click (macOS).
@@ -17001,6 +17005,50 @@ impl ApplicationHandler for Game<'_> {
         } else {
             None
         };
+        if self.window.as_ref().is_some_and(|w| w.id() == id) {
+            if let WindowEvent::Focused(false) = &event {
+                self.f_chord.reset();
+                self.held_f = None;
+            }
+            if let WindowEvent::KeyboardInput {
+                device_id,
+                event: key_event,
+                is_synthetic: false,
+            } = &event
+                && let PhysicalKey::Code(code) = key_event.physical_key
+            {
+                let blocked = self.modifiers.control_key()
+                    || self.modifiers.alt_key()
+                    || self.modifiers.super_key();
+                let typing = self.text_field_focused();
+                let verdict =
+                    self.f_chord
+                        .feed(code, key_event.state, key_event.repeat, blocked, typing);
+                if verdict.flush_f
+                    && let Some((held_device, held)) = self.held_f.take()
+                {
+                    self.chorded_event(event_loop, id, held_device, held);
+                }
+                match verdict.then {
+                    f_chord::Then::Pass => {}
+                    f_chord::Then::Swallow => return,
+                    f_chord::Then::Hold => {
+                        self.held_f = Some((*device_id, key_event.clone()));
+                        return;
+                    }
+                    f_chord::Then::AsFunction(function) => {
+                        let mut remade = key_event.clone();
+                        remade.physical_key = PhysicalKey::Code(function);
+                        remade.logical_key = f_chord::named(function)
+                            .map_or(remade.logical_key, winit::keyboard::Key::Named);
+                        remade.text = None;
+                        remade.location = winit::keyboard::KeyLocation::Standard;
+                        self.chorded_event(event_loop, id, *device_id, remade);
+                        return;
+                    }
+                }
+            }
+        }
         self.handle_window_event(event_loop, id, event, input_trace::InputOrigin::User);
         if let Some((event, modifiers)) = key {
             self.native_input_key(&event, modifiers);
@@ -18821,6 +18869,8 @@ impl<'a> Game<'a> {
             },
             keys: HashSet::new(),
             physical_keys: HashSet::new(),
+            f_chord: f_chord::FChord::default(),
+            held_f: None,
             physical_buttons: HashSet::new(),
             drag_button: None,
             right_click_emulation: Default::default(),
