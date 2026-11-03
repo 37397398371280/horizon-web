@@ -9,6 +9,28 @@ use horizon_client::{
 };
 
 impl Game<'_> {
+    /// A key event `f_chord` made or held back, through the game and the mods as if it came
+    /// from the window.
+    pub(super) fn chorded_event(
+        &mut self,
+        event_loop: &winit::event_loop::ActiveEventLoop,
+        id: winit::window::WindowId,
+        device_id: winit::event::DeviceId,
+        event: winit::event::KeyEvent,
+    ) {
+        let modifiers = super::glfw_modifiers(self.modifiers);
+        self.handle_window_event(
+            event_loop,
+            id,
+            winit::event::WindowEvent::KeyboardInput {
+                device_id,
+                event: event.clone(),
+                is_synthetic: false,
+            },
+        );
+        self.native_input_key(&event, modifiers);
+    }
+
     /// Whether a text box has focus right now (the fields `ime_commit` can fill).
     pub(super) fn text_field_focused(&mut self) -> bool {
         if self.dialog_open() {
