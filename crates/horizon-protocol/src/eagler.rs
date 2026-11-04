@@ -11,7 +11,8 @@
 //! The client wears the skin and cape set with [`set_look`]: the login sends
 //! them (`skin_v2`, `cape_v1` profile data), and the plugin shows them to
 //! the other players. Theirs come from the plugin's messages
-//! ([`other_look`]), which start with `0xEE` in the play phase.
+//! ([`other_look`]), which start with `0xEE` in the play phase. The login
+//! asks for the server's own pause menu too ([`pause_menu`]).
 //!
 //! [`EaglerSocket`] hides all of that behind the byte stream a
 //! [`Connection`](crate::connection::Connection) reads and writes: it reads
@@ -253,7 +254,8 @@ impl EaglerSocket {
             return Err(text("Unexpected reply from the Eaglercraft server"));
         }
         // REQUEST_LOGIN: the name, the default server, no password, no
-        // cookie, no capabilities.
+        // cookie, the pause menu capability at version 0, no extended ones.
+        *pause_menus() = None;
         let mut w = Writer::new();
         w.u8(0x04);
         str8(&mut w, name);
@@ -261,7 +263,8 @@ impl EaglerSocket {
         w.u8(0);
         w.u8(0);
         w.u8(0);
-        w.varint(0);
+        w.varint(CAPABILITY_PAUSE_MENU);
+        w.varint(1);
         w.u8(0);
         self.send(w.data)?;
         // ALLOW_LOGIN comes once the backend took the login.
@@ -657,9 +660,16 @@ fn for_each_message(data: &[u8], mut each: impl FnMut(&[u8])) {
 }
 
 /// One plugin message: SPacketOtherTexturesV5EAG (the request id, the skin
-/// id and the cape id, a negative one followed by its pixels) is the one
-/// read; the rest (voice, notifications, its pause menu...) are dropped.
+/// id and the cape id, a negative one followed by its pixels) and
+/// SPacketCustomizePauseMenuV4EAG are read; the rest (voice,
+/// notifications...) are dropped.
 fn plugin_message(data: &[u8]) {
+    if data.first() == Some(&S_CUSTOMIZE_PAUSE_MENU) {
+        if let Some(menu) = read_pause_menu(&data[1..]) {
+            *pause_menus() = Some(Arc::new(menu));
+        }
+        return;
+    }
     if let Some((request, look)) = textures(data) {
         let mut skins = skins();
         if let Some(uuid) = skins.pending.remove(&request) {
@@ -694,6 +704,164 @@ fn textures(data: &[u8]) -> Option<(i32, OtherLook)> {
     })()
     .ok()
     .flatten()
+}
+
+/// The login's capability bit for the server's pause menu.
+const CAPABILITY_PAUSE_MENU: i32 = 1 << 4;
+/// SPacketCustomizePauseMenuV4EAG's id.
+const S_CUSTOMIZE_PAUSE_MENU: u8 = 0x18;
+/// The largest icon side the plugin sends.
+const MAX_ICON: u8 = 64;
+
+/// The Eaglercraft server's own pause menu (its `pause_menu.yml`): a
+/// "server info" button, a Discord button, and small pictures for the menu's
+/// buttons and title, each named by a key such as `icon_discord_L` (left of
+/// the Discord button's text) or `icon_title_R`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PauseMenu {
+    /// Counts up with each menu the client is sent, so a mod can tell a new
+    /// one from the last.
+    pub serial: u32,
+    pub server_info: Option<PauseButton>,
+    pub discord: Option<PauseButton>,
+    /// Each icon key's picture, an index into `icons`.
+    pub icon_keys: HashMap<String, usize>,
+    pub icons: Vec<PauseIcon>,
+}
+
+/// One of the server's buttons: its text, and the link it opens, if it's
+/// one (the server info button can instead show markup in a web view, which
+/// this client has none of).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PauseButton {
+    pub text: String,
+    pub url: Option<String>,
+}
+
+/// A picture of the pause menu: unpremultiplied RGBA, row by row, each pixel
+/// fully opaque or clear.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PauseIcon {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
+}
+
+fn pause_menus() -> std::sync::MutexGuard<'static, Option<Arc<PauseMenu>>> {
+    static MENU: std::sync::OnceLock<Mutex<Option<Arc<PauseMenu>>>> = std::sync::OnceLock::new();
+    horizon_os::sync::lock(MENU.get_or_init(Mutex::default)).unwrap_or_else(|e| e.into_inner())
+}
+
+/// The pause menu the Eaglercraft server last logged in to sent, if it sent
+/// one. It stays after leaving; the caller asks only while on that server.
+pub fn pause_menu() -> Option<Arc<PauseMenu>> {
+    pause_menus().clone()
+}
+
+/// SPacketCustomizePauseMenuV4EAG's body (EaglerXServer's
+/// `pause_menu.yml`): the two buttons' modes in a byte, each button, then
+/// the icon keys and the pictures they share.
+fn read_pause_menu(data: &[u8]) -> Option<PauseMenu> {
+    static SERIAL: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+    let mut r = Reader::new(data);
+    (|| -> crate::Result<PauseMenu> {
+        let modes = r.u8()?;
+        let server_info = match modes & 0x0F {
+            // A link opened in a new tab.
+            1 => Some(PauseButton {
+                text: r.string(32767)?,
+                url: Some(short_ascii(&mut r)?),
+            }),
+            // A link shown in a web view: opened in a new tab instead.
+            2 => {
+                let text = r.string(32767)?;
+                let url = short_ascii(&mut r)?;
+                r.u8()?; // the web view's permissions
+                r.string(32767)?; // its screen's title
+                Some(PauseButton {
+                    text,
+                    url: Some(url),
+                })
+            }
+            // Markup the server sends, shown in a web view.
+            3 => {
+                let text = r.string(32767)?;
+                r.u8()?;
+                r.string(32767)?;
+                r.bytes(20)?; // the markup's SHA-1, which asks for it
+                Some(PauseButton { text, url: None })
+            }
+            _ => None,
+        };
+        let discord = if (modes >> 4) & 0x0F == 1 {
+            Some(PauseButton {
+                text: r.string(32767)?,
+                url: Some(short_ascii(&mut r)?),
+            })
+        } else {
+            None
+        };
+        let mut icon_keys = HashMap::new();
+        let mut icons = Vec::new();
+        let keys = r.count(256)?;
+        if keys > 0 {
+            for _ in 0..keys {
+                let n = r.u8()?;
+                let key = String::from_utf8_lossy(r.bytes(n.into())?).into_owned();
+                let index = usize::try_from(r.varint()?).unwrap_or(usize::MAX);
+                icon_keys.insert(key, index);
+            }
+            for _ in 0..r.count(256)? {
+                icons.push(read_pause_icon(&mut r)?);
+            }
+            icon_keys.retain(|_, i| *i < icons.len());
+        }
+        Ok(PauseMenu {
+            serial: SERIAL.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
+            server_info,
+            discord,
+            icon_keys,
+            icons,
+        })
+    })()
+    .ok()
+}
+
+/// An unsigned short length, then one byte a character.
+fn short_ascii(r: &mut Reader) -> crate::Result<String> {
+    let n = r.u16()?;
+    Ok(String::from_utf8_lossy(r.bytes(n.into())?).into_owned())
+}
+
+/// Eagler's 16-bit picture: a byte each for width and height, then a short
+/// a pixel, RGB 5:6:5 with blue counted from 1, and 0 for clear.
+fn read_pause_icon(r: &mut Reader) -> crate::Result<PauseIcon> {
+    let (width, height) = (r.u8()?, r.u8()?);
+    if width == 0 || height == 0 || width > MAX_ICON || height > MAX_ICON {
+        return Err(crate::Error::new("bad pause menu icon size"));
+    }
+    let (width, height) = (u32::from(width), u32::from(height));
+    let mut rgba = vec![0; (width * height * 4) as usize];
+    for px in rgba.chunks_exact_mut(4) {
+        let p = u32::from(r.u16()?);
+        if p == 0 {
+            continue;
+        }
+        let red = (p >> 11) & 0x1F;
+        let green = (p >> 5) & 0x3F;
+        let blue = (p & 0x1F).saturating_sub(1);
+        px.copy_from_slice(&[
+            (red * 255 / 31) as u8,
+            (green * 255 / 63) as u8,
+            (blue * 255 / 30) as u8,
+            255,
+        ]);
+    }
+    Ok(PauseIcon {
+        width,
+        height,
+        rgba,
+    })
 }
 
 impl Read for EaglerSocket {
@@ -850,7 +1018,14 @@ mod tests {
             sent[1..],
             [
                 Message::Binary(
-                    [&[0x04, 5][..], b"Steve", &[7], b"default", &[0, 0, 0, 0, 0]].concat()
+                    [
+                        &[0x04, 5][..],
+                        b"Steve",
+                        &[7],
+                        b"default",
+                        &[0, 0, 0, 0x10, 1, 0]
+                    ]
+                    .concat()
                 ),
                 Message::Binary(vec![0x08]),
                 // The acknowledgement stayed here; the game packet went as
@@ -1007,6 +1182,46 @@ mod tests {
         };
         assert!(*slim);
         assert_eq!(&rgba[..4], &[254, 255, 255, 255]);
+    }
+
+    #[test]
+    fn the_servers_pause_menu_is_read() {
+        let mut w = Writer::new();
+        w.u8(S_CUSTOMIZE_PAUSE_MENU);
+        // Server info a link (1), Discord a link (1).
+        w.u8(0x11);
+        w.string("Store");
+        w.u16(19);
+        w.data.extend_from_slice(b"https://example.net");
+        w.string("Our Discord");
+        w.u16(18);
+        w.data.extend_from_slice(b"https://discord.gg");
+        // Two keys sharing one 2x1 picture: red, then clear.
+        w.varint(2);
+        for key in ["icon_discord_L", "icon_title_R"] {
+            w.u8(key.len() as u8);
+            w.data.extend_from_slice(key.as_bytes());
+            w.varint(0);
+        }
+        w.varint(1);
+        w.u8(2);
+        w.u8(1);
+        w.u16(0xF800 | 1);
+        w.u16(0);
+        let mut read = None;
+        for_each_message(&w.data, |m| read = read_pause_menu(&m[1..]));
+        let menu = read.unwrap();
+        assert_eq!(
+            menu.server_info,
+            Some(PauseButton {
+                text: "Store".into(),
+                url: Some("https://example.net".into())
+            })
+        );
+        assert_eq!(menu.discord.unwrap().text, "Our Discord");
+        assert_eq!(menu.icon_keys.len(), 2);
+        assert_eq!(menu.icon_keys["icon_title_R"], 0);
+        assert_eq!(menu.icons[0].rgba, [255, 0, 0, 255, 0, 0, 0, 0]);
     }
 
     #[test]

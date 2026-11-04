@@ -88,6 +88,7 @@ impl Game<'_> {
             "lan" => 9,
             "friends" => 10,
             "links" => 11,
+            "additions" => 14,
             "report_bugs" => 12,
             "feedback" => 13,
             "social" => 15,

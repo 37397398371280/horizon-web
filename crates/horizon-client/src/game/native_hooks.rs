@@ -9605,8 +9605,9 @@ impl Game<'_> {
     /// `language`, `accessibility`, `packs`, `credits`, `quit`, `resume`,
     /// `pause`, `disconnect`, `advancements`, `stats`, `lan`, `title`. False
     /// when it isn't one, or can't be done here (`resume` on the title).
-    /// In a world, also the pause menu's `links`, `report_bugs`,
-    /// `feedback` and `social`.
+    /// In a world, also the pause menu's `links`, `additions` (its
+    /// `pause_screen_additions` dialog), `report_bugs`, `feedback` and
+    /// `social`.
     pub(super) fn native_open(&mut self, what: &str) -> bool {
         self.open_ui(what)
     }
@@ -9812,6 +9813,30 @@ impl Game<'_> {
     pub(super) fn native_server_address(&self) -> Option<String> {
         self.remote.as_ref()?;
         self.server_address().map(str::to_owned)
+    }
+    /// The Eaglercraft server's own pause menu (its `pause_menu.yml`: a
+    /// server info button, a Discord button and icons), while on the server
+    /// that sent it; None elsewhere or when it sent none.
+    pub(super) fn native_eagler_pause_menu(
+        &self,
+    ) -> Option<std::sync::Arc<horizon_protocol::eagler::PauseMenu>> {
+        self.remote.as_ref()?;
+        let address = self.server_address()?.to_ascii_lowercase();
+        if !(address.starts_with("ws://") || address.starts_with("wss://")) {
+            return None;
+        }
+        horizon_protocol::eagler::pause_menu()
+    }
+    /// The pause menu's server button, as vanilla shows it: the
+    /// `pause_screen_additions` dialog's label and `additions`, or "Server
+    /// Links..." and `links` when the server sent links; `native_open` does
+    /// the action. None when the server has neither.
+    pub(super) fn native_pause_server_button(&self) -> Option<(String, &'static str)> {
+        if let Some((label, _)) = self.pause_screen_additions() {
+            return Some((label.plain(), "additions"));
+        }
+        (!self.server_links().is_empty())
+            .then(|| (Text::translate("menu.server_links", &[]).plain(), "links"))
     }
     /// The local time zone's offset from UTC in milliseconds (0 where it
     /// can't be told).

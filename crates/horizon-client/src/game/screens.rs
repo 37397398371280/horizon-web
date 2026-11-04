@@ -199,7 +199,7 @@ impl Game<'_> {
     /// `minecraft:custom_options` `dialog_list` when it names several. `None`
     /// when the tag is empty: the caller falls back to the server links
     /// button, as vanilla does.
-    fn pause_screen_additions(&self) -> Option<(Text, Tag)> {
+    pub(super) fn pause_screen_additions(&self) -> Option<(Text, Tag)> {
         let registries = &self.remote.as_ref()?.registries;
         let dialogs = registries.registries.get("minecraft:dialog")?;
         let tag = registries
