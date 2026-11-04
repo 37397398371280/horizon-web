@@ -1237,7 +1237,36 @@ impl ParticleLevel<'_> {
 }
 
 /// `ParticleEngine` plus the sprite sets of `ParticleResources`.
+/// The particles a native mod hides (`native_no_render`): those of the
+/// types it names are never made or added, on this client only.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ParticleHide {
+    /// Every particle.
+    pub all: bool,
+    /// Bone meal's and villagers' green sparkles (`happy_villager`).
+    pub growth: bool,
+    /// `TerrainParticle`s: blocks breaking, running and landing dust.
+    pub breaking: bool,
+    /// Explosions' clouds (`explosion`, `explosion_emitter`).
+    pub explosions: bool,
+    /// Firework sparks and flashes.
+    pub fireworks: bool,
+}
+impl ParticleHide {
+    /// Whether a particle of `ty` is hidden.
+    pub fn hides(self, ty: ParticleType) -> bool {
+        use ParticleType as T;
+        self.all
+            || (self.growth && ty == T::HappyVillager)
+            || (self.breaking && matches!(ty, T::Block | T::BlockCrumble | T::DustPillar))
+            || (self.explosions && matches!(ty, T::Explosion | T::ExplosionEmitter))
+            || (self.fireworks && matches!(ty, T::Firework | T::Flash))
+    }
+}
+
 pub struct ParticleEngine {
+    /// What a native mod hides; nothing by default.
+    pub hide: ParticleHide,
     particles: Vec<Particle>,
     pending: Vec<Particle>,
     /// `ParticleEngine.random`, handed to every `ParticleProvider`.
@@ -1443,6 +1472,7 @@ struct TrackedExplosion {
 impl ParticleEngine {
     pub fn new(root: &Path, atlas: &HashMap<String, Rect>, translucent: &HashSet<String>) -> Self {
         let mut engine = Self {
+            hide: ParticleHide::default(),
             particles: Vec::new(),
             pending: Vec::new(),
             random: LegacyRandom::new(0x7061_7274),
@@ -1932,6 +1962,9 @@ impl ParticleEngine {
     pub fn create(&mut self, options: &ParticleOptions, p: [f64; 3], v: [f64; 3]) {
         if let Some(requests) = &mut self.created_requests {
             requests.push((options.clone(), p, v));
+            return;
+        }
+        if self.hide.hides(options.ty) {
             return;
         }
         let seed = self.seeds.next_long();
@@ -3714,6 +3747,10 @@ impl ParticleEngine {
         self.particles = particles;
         let pending = std::mem::take(&mut self.pending);
         for mut p in pending {
+            // What came in other than through `create` (a block's crumbs, a firework's sparks).
+            if self.hide.hides(p.ty) {
+                continue;
+            }
             if p.pre_tick {
                 p.pre_tick = false;
                 self.tick_particle(&mut p, level);
@@ -4937,6 +4974,33 @@ const CREEPER: [[f64; 2]; 12] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_mod_hides_only_the_particles_it_names() {
+        use ParticleType as T;
+        assert!(!ParticleHide::default().hides(T::HappyVillager));
+        let growth = ParticleHide {
+            growth: true,
+            ..Default::default()
+        };
+        assert!(growth.hides(T::HappyVillager));
+        assert!(!growth.hides(T::Block));
+        let breaking = ParticleHide {
+            breaking: true,
+            ..Default::default()
+        };
+        assert!(breaking.hides(T::Block) && breaking.hides(T::DustPillar));
+        let fireworks = ParticleHide {
+            fireworks: true,
+            ..Default::default()
+        };
+        assert!(fireworks.hides(T::Firework) && fireworks.hides(T::Flash));
+        let all = ParticleHide {
+            all: true,
+            ..Default::default()
+        };
+        assert!(T::ALL.iter().all(|&ty| all.hides(ty)));
+    }
 
     #[test]
     fn particle_light_cache_reuses_exact_blocks_and_fails_open_on_collisions() {

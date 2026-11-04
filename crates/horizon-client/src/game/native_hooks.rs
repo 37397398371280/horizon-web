@@ -2077,6 +2077,26 @@ pub(crate) struct NativeFill {
     pub(crate) argb: u32,
 }
 
+/// What a mod leaves out of the world drawn (`native_no_render`), on this
+/// client only: hidden entities are still there to pick up and collide with.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct NativeNoRender {
+    /// Dropped items (and items being picked up) aren't drawn.
+    pub(crate) items_hidden: bool,
+    /// Dropped items lie still: no bob or spin (`ItemEntityRenderer` at age 0).
+    pub(crate) items_still: bool,
+    /// A dropped stack is drawn as one item, not a pile of up to five.
+    pub(crate) one_copy: bool,
+    /// Experience orbs aren't drawn.
+    pub(crate) orbs: bool,
+    /// Falling blocks aren't drawn.
+    pub(crate) falling_blocks: bool,
+    /// Firework rockets aren't drawn (their sparks: `particles.fireworks`).
+    pub(crate) fireworks: bool,
+    /// Particles never made.
+    pub(crate) particles: horizon_client::particles::ParticleHide,
+}
+
 /// A line a mod draws in the world (`native_lines`): ends in world
 /// coordinates, ARGB, width in pixels.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -2964,6 +2984,13 @@ impl Game<'_> {
     /// Client-side.
     pub(super) fn native_fire_overlay(&self, lower: &mut f32) {
         let _ = lower;
+    }
+    /// What the world leaves undrawn this frame (`NativeNoRender`): dropped
+    /// items hidden or still, orbs, falling blocks, rockets and particles.
+    /// Asked once a frame while a world is drawn; particles follow from the
+    /// next one made. Client-side.
+    pub(super) fn native_no_render(&self, hide: &mut NativeNoRender) {
+        let _ = hide;
     }
     /// The player hit a mob `distance` blocks from their eye, along the
     /// crosshair (`Minecraft.startAttack`'s hit result): the reach of a hit.

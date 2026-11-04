@@ -541,6 +541,7 @@ impl Game<'_> {
         &self,
         camera: glam::DVec3,
         alpha: f64,
+        hide: super::native_hooks::NativeNoRender,
         out: &mut Vec<Vertex>,
     ) {
         let live = self.dropped.iter().map(|item| {
@@ -601,7 +602,12 @@ impl Game<'_> {
             if state.is_empty() {
                 continue;
             }
-            let age = item.age as f32 + partial;
+            // A mod's still items (No Render) are drawn at age 0, where bob and spin stay put.
+            let age = if hide.items_still && entity {
+                0.0
+            } else {
+                item.age as f32 + partial
+            };
             let (lo, _) = state.bounding_box();
             let min_offset_y = -lo.y + 0.0625;
             let bob = (age / 10.0 + item.bob_offset).sin() * 0.1 + 0.1;
@@ -619,7 +625,11 @@ impl Game<'_> {
             let copies = item_render::cluster_poses(
                 &state,
                 pose,
-                item_render::rendered_amount(item.stack.count),
+                if hide.one_copy && entity {
+                    1
+                } else {
+                    item_render::rendered_amount(item.stack.count)
+                },
                 seed,
             );
             let glowing = self.entity_glowing(item.id);

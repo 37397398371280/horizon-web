@@ -1,0 +1,15 @@
+{
+  "hooks": [
+    {
+      "name": "no_render",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_no_render",
+      "side": "client",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
+    }
+  ],
+  "rust_summary": "a client hook for frames (`native_no_render`): dropped items hidden or still, a stack as one item, experience orbs,\nfalling blocks and firework rockets hidden, and particles by kind (`ParticleHide`) never made.",
+  "doc_summary": "`native_no_render`: what the world leaves undrawn on this client (dropped items hidden or lying still, a stack drawn as one item, experience orbs, falling blocks, firework rockets) and the particles never made (`ParticleHide`: all, bone meal sparkles, block crumbs, explosions, fireworks). Bundles need \"hooks\": @API:incari_no_render@."
+}

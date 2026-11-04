@@ -11084,6 +11084,10 @@ impl Game<'_> {
         } else {
             self.yaw
         };
+        // What a mod hides (No Render): asked once a frame, here.
+        let mut hide = native_hooks::NativeNoRender::default();
+        self.native_no_render(&mut hide);
+        self.particles.hide = hide.particles;
         laps.lap("eg_prep");
         for m in &self.mobs {
             // Blaze.isOnFire: a charged blaze burns.
@@ -11130,7 +11134,7 @@ impl Game<'_> {
             );
         }
         laps.lap("eg_fire_mobs");
-        for item in &self.dropped {
+        for item in self.dropped.iter().filter(|_| !hide.items_hidden) {
             if item.fire_ticks > 0
                 && !self
                     .res
@@ -11178,7 +11182,9 @@ impl Game<'_> {
         laps.lap("eg_fire_stands");
         // `ItemEntityRenderer`.
         self.mark_entity(out.len(), "minecraft:item");
-        self.dropped_item_geometry(camera, alpha, &mut out);
+        if !hide.items_hidden {
+            self.dropped_item_geometry(camera, alpha, hide, &mut out);
+        }
         self.mark_motion(out.len(), 0);
         // `VaultRenderer`.
         self.mark_entity(out.len(), "");
@@ -11252,12 +11258,14 @@ impl Game<'_> {
             casters.extend(
                 self.dropped
                     .iter()
+                    .filter(|_| !hide.items_hidden)
                     .map(|i| (lerp(i.previous, i.position), item.0, item.1)),
             );
             let orb = horizon_client::shadows::shadow_params("minecraft:experience_orb");
             casters.extend(
                 self.orbs
                     .iter()
+                    .filter(|_| !hide.orbs)
                     .map(|o| (lerp(o.previous, o.position), orb.0, orb.1)),
             );
             // Text, block and item displays (DisplayRenderer's shadow radius).
@@ -11457,12 +11465,13 @@ impl Game<'_> {
         laps.lap("eg_block_entities");
         // Experience orbs (ExperienceOrbRenderer): pulsing billboards from a 4x4 icon sheet.
         self.mark_entity(out.len(), "minecraft:experience_orb");
-        if let Some(r) = self
-            .gui
-            .atlas
-            .sprites
-            .get("entity/experience/experience_orb")
-            .copied()
+        if !hide.orbs
+            && let Some(r) = self
+                .gui
+                .atlas
+                .sprites
+                .get("entity/experience/experience_orb")
+                .copied()
         {
             let (yaw, pitch) = (self.yaw.to_radians(), self.pitch.to_radians());
             let forward = glam::Vec3::new(
@@ -11533,7 +11542,7 @@ impl Game<'_> {
         laps.lap("eg_orbs");
         // Falling blocks use their baked model, including non-cubic shapes.
         self.mark_entity(out.len(), "minecraft:falling_block");
-        for f in &self.falling {
+        for f in self.falling.iter().filter(|_| !hide.falling_blocks) {
             // `FallingBlockEntity.blockPosition()`: the cell its feet are in.
             let (x, y, z) = (
                 f.position.x.floor() as i32,
@@ -11592,7 +11601,9 @@ impl Game<'_> {
         self.mark_entity(out.len(), "minecraft:trident");
         self.trident_geometry(camera, alpha, &mut out);
         self.mark_entity(out.len(), "minecraft:firework_rocket");
-        self.rocket_geometry(camera, alpha, &mut out);
+        if !hide.fireworks {
+            self.rocket_geometry(camera, alpha, &mut out);
+        }
         self.mark_entity(out.len(), "minecraft:splash_potion");
         self.thrown_potion_geometry(camera, alpha, &mut out);
         laps.lap("eg_objects");
