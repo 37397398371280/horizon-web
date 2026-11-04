@@ -322,4 +322,59 @@ mod tests {
         assert_eq!(frame, [4, 0, 9, 1, 2]);
         server.join().unwrap();
     }
+
+    /// A detached WebSocket connection (a server's network pool polls it)
+    /// still carries packets both ways, through the pipe it is bridged to,
+    /// and the browser closing it ends the pipe.
+    #[test]
+    fn a_detached_connection_is_bridged_through_a_pipe() {
+        use crate::connection::{Connection, Socket};
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let mut s = TcpStream::connect(("127.0.0.1", port)).unwrap();
+        s.write_all(
+            b"GET / HTTP/1.1\r\nHost: x\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+              Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+        )
+        .unwrap();
+        let c = Connection::from_websocket(listener.accept().unwrap().0).unwrap();
+        let mut reply = Vec::new();
+        let mut byte = [0];
+        while !reply.ends_with(b"\r\n\r\n") {
+            s.read_exact(&mut byte).unwrap();
+            reply.push(byte[0]);
+        }
+        let (socket, mut reader, mut writer) = c.detach();
+        let Socket::Memory(mut pipe) = socket else {
+            panic!("a WebSocket is bridged to a pipe");
+        };
+        // Browser to server: [len 2, id 5, 7] in a masked binary frame.
+        let mask = [1, 2, 3, 4];
+        let data = [2u8, 5, 7];
+        let mut f = vec![0x82, 0x80 | data.len() as u8];
+        f.extend_from_slice(&mask);
+        f.extend(data.iter().enumerate().map(|(i, b)| b ^ mask[i % 4]));
+        s.write_all(&f).unwrap();
+        let packet = loop {
+            if let Some(p) = reader.buffered().unwrap() {
+                break p;
+            }
+            assert!(reader.read_from(&mut pipe).unwrap() > 0);
+        };
+        assert_eq!(packet, (5, vec![7]));
+        // Server to browser: one binary frame with the framed packet.
+        let mut out = Vec::new();
+        writer.frame_into(&[9, 1, 2], &mut out);
+        pipe.write_all(&out).unwrap();
+        let mut head = [0; 2];
+        s.read_exact(&mut head).unwrap();
+        assert_eq!(head[0], 0x82);
+        let mut frame = vec![0; head[1] as usize];
+        s.read_exact(&mut frame).unwrap();
+        assert_eq!(frame, [3, 9, 1, 2]);
+        // The browser leaves: the pipe ends.
+        s.shutdown(std::net::Shutdown::Both).unwrap();
+        let mut rest = [0; 16];
+        assert_eq!(pipe.read(&mut rest).unwrap(), 0);
+    }
 }

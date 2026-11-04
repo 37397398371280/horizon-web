@@ -42,7 +42,7 @@ pub fn native_ingredient(
 /// stack being matched, `accept` already true (the load-time list named
 /// the item). Set `accept` to false to refuse the stack — its components
 /// are the usual reason. The hook may be called many times a craft; the
-/// answer must be the same for the same stack. API @API:ingredient_test@.
+/// answer must be the same for the same stack. API 377.
 #[inline(never)]
 pub fn native_ingredient_test(
     kind: &str,
@@ -394,6 +394,12 @@ pub enum Recipe {
     },
     /// The recipes with code of their own.
     Special(Special),
+}
+impl Recipe {
+    /// `Recipe.isSpecial`: special recipes (e.g. firework rocket, dye) are not in the recipe book.
+    pub fn is_special(&self) -> bool {
+        matches!(self, Recipe::Special(_))
+    }
 }
 /// The custom and transmuting crafting recipes.
 #[derive(Clone, Debug)]
@@ -1404,6 +1410,27 @@ pub fn qualified(id: &str) -> String {
 }
 
 impl Recipes {
+    pub fn empty() -> Self {
+        Self {
+            crafting: Vec::new(),
+            cooking: Vec::new(),
+            custom: HashMap::new(),
+            meta: HashMap::new(),
+            facts: HashMap::new(),
+            curses: HashSet::new(),
+            cook_index: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// `RecipeManager.getRecipe`: look up a crafting recipe by its id name.
+    pub fn recipe(&self, name: &str) -> Option<&Recipe> {
+        let bare = name.strip_prefix("minecraft:").unwrap_or(name);
+        self.crafting
+            .iter()
+            .find(|(n, _)| n == name || n == bare)
+            .map(|(_, r)| r)
+    }
+
     pub fn load(root: &Path, items: &Items, overlay: &PackOverlay) -> Result<Self> {
         let sources = Self::sources(root, overlay)?;
         Self::from_sources(root, items, overlay, sources)

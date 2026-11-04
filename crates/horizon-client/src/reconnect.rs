@@ -176,7 +176,7 @@ impl Retry {
     }
 }
 impl Tracker {
-    /// The server connected to last.
+    /// The server connected to last (splitscreen players join the same one).
     pub fn address(&self) -> Option<&str> {
         self.address.as_deref()
     }
@@ -246,7 +246,11 @@ mod tests {
             delays.push(r.seconds_left(now));
         }
         assert_eq!(delays, DELAYS);
-        assert_eq!(t.address(), Some("example.org"), "Reconnect can still join it");
+        assert_eq!(
+            t.address(),
+            Some("example.org"),
+            "Reconnect can still join it"
+        );
         assert_eq!(t.attempt_at(now).unwrap().address, "example.org");
         t.restart();
         assert_eq!(t.ended_any(now).unwrap().seconds_left(now), DELAYS[0]);

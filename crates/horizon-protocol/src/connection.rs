@@ -1,7 +1,9 @@
 //! A blocking connection with vanilla's pipeline: optional AES/CFB8
 //! encryption, VarInt21 framing and threshold compression. After login it
-//! splits into a reader (for a receive thread) and a shareable writer. It runs
-//! over TCP, or over an in-memory pipe between two threads of one process
+//! splits into a reader (for a receive thread) and a shareable writer, or
+//! gives its stream up ([`Connection::detach`]) to be polled without blocking,
+//! the halves then keeping only the framing, compression and encryption. It
+//! runs over TCP, or over an in-memory pipe between two threads of one process
 //! (vanilla's `LocalChannel`, which an integrated server's player uses). A
 //! server also takes browsers' WebSockets on its port, and on the web the
 //! client reaches servers through one.
@@ -16,17 +18,30 @@ use std::{
     },
 };
 
+/// Called when a [`Pipe`] end has bytes to read or was closed ([`Pipe::on_ready`]).
+type Notify = Arc<dyn Fn() + Send + Sync>;
+
 /// One direction of a [`Pipe`]: the bytes written and not read yet, and
 /// whether either end closed it.
 #[derive(Default)]
 struct Channel {
     state: Mutex<(std::collections::VecDeque<u8>, bool)>,
     ready: Condvar,
+    /// The reading end's [`Pipe::on_ready`].
+    notify: Mutex<Option<Notify>>,
 }
 impl Channel {
     fn close(&self) {
         horizon_os::sync::lock(&self.state).unwrap().1 = true;
         self.ready.notify_all();
+        self.notify();
+    }
+    /// Tell a reader that doesn't block, outside the state's lock.
+    fn notify(&self) {
+        let notify = horizon_os::sync::lock(&self.notify).unwrap().clone();
+        if let Some(notify) = notify {
+            notify();
+        }
     }
 }
 /// The channels of one end; dropping the end's last clone closes them, as
@@ -46,6 +61,8 @@ pub struct Pipe {
     end: Arc<End>,
     /// The read timeout (`set_read_timeout`).
     timeout: Mutex<Option<Duration>>,
+    /// Reads with nothing to read fail with `WouldBlock` instead of waiting.
+    nonblocking: bool,
 }
 impl Pipe {
     /// Two connected ends.
@@ -54,6 +71,7 @@ impl Pipe {
         let end = |incoming, outgoing| Self {
             end: Arc::new(End { incoming, outgoing }),
             timeout: Mutex::new(None),
+            nonblocking: false,
         };
         (end(a.clone(), b.clone()), end(b, a))
     }
@@ -61,6 +79,24 @@ impl Pipe {
         Self {
             end: self.end.clone(),
             timeout: Mutex::new(*horizon_os::sync::lock(&self.timeout).unwrap()),
+            nonblocking: self.nonblocking,
+        }
+    }
+    /// Reads with nothing to read fail with `WouldBlock`, as a non-blocking socket's do.
+    pub fn set_nonblocking(&mut self, nonblocking: bool) {
+        self.nonblocking = nonblocking;
+    }
+    /// Call `notify` whenever bytes arrive at this end or the pipe closes (also
+    /// now, if either already happened), as a poller's readiness would: a
+    /// non-blocking reader then reads until `WouldBlock`.
+    pub fn on_ready(&self, notify: impl Fn() + Send + Sync + 'static) {
+        let incoming = &self.end.incoming;
+        *horizon_os::sync::lock(&incoming.notify).unwrap() = Some(Arc::new(notify));
+        let state = horizon_os::sync::lock(&incoming.state).unwrap();
+        let ready = !state.0.is_empty() || state.1;
+        drop(state);
+        if ready {
+            incoming.notify();
         }
     }
     /// Close both directions: reads at either end then see the end of the stream.
@@ -71,10 +107,13 @@ impl Pipe {
 }
 impl Read for Pipe {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
-        let timeout = *self.timeout.lock().unwrap();
+        let timeout = *horizon_os::sync::lock(&self.timeout).unwrap();
         let incoming = &self.end.incoming;
         let state = horizon_os::sync::lock(&incoming.state).unwrap();
         let empty = |s: &mut (std::collections::VecDeque<u8>, bool)| s.0.is_empty() && !s.1;
+        if self.nonblocking && state.0.is_empty() && !state.1 {
+            return Err(std::io::ErrorKind::WouldBlock.into());
+        }
         let mut state = match timeout {
             None => horizon_os::sync::wait_while(&incoming.state, &incoming.ready, state, empty),
             Some(timeout) => {
@@ -103,6 +142,8 @@ impl Write for Pipe {
         }
         state.0.extend(data);
         self.end.outgoing.ready.notify_all();
+        drop(state);
+        self.end.outgoing.notify();
         Ok(data.len())
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -121,6 +162,11 @@ enum Stream {
     Web(horizon_os::net::WebSocket),
     /// This page's connection to an Eaglercraft server.
     Eagler(crate::eagler::EaglerSocket),
+    /// Given up by [`Connection::detach`]: reads and writes fail.
+    Detached,
+}
+fn detached() -> std::io::Error {
+    std::io::ErrorKind::NotConnected.into()
 }
 impl Stream {
     fn try_clone(&self) -> std::io::Result<Self> {
@@ -131,6 +177,7 @@ impl Stream {
             #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
             Self::Web(s) => Self::Web(s.try_clone()),
             Self::Eagler(s) => Self::Eagler(s.try_clone()?),
+            Self::Detached => Self::Detached,
         })
     }
     fn set_read_timeout(&self, timeout: Option<Duration>) -> std::io::Result<()> {
@@ -150,6 +197,7 @@ impl Stream {
                 s.set_read_timeout(timeout);
                 Ok(())
             }
+            Self::Detached => Ok(()),
         }
     }
     fn shutdown(&self) {
@@ -162,6 +210,7 @@ impl Stream {
             #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
             Self::Web(s) => s.shutdown(),
             Self::Eagler(s) => s.shutdown(),
+            Self::Detached => {}
         }
     }
 }
@@ -174,6 +223,7 @@ impl Read for Stream {
             #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
             Self::Web(s) => s.read(out),
             Self::Eagler(s) => s.read(out),
+            Self::Detached => Err(detached()),
         }
     }
 }
@@ -186,6 +236,7 @@ impl Write for Stream {
             #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
             Self::Web(s) => s.write(data),
             Self::Eagler(s) => s.write(data),
+            Self::Detached => Err(detached()),
         }
     }
     fn flush(&mut self) -> std::io::Result<()> {
@@ -196,8 +247,15 @@ impl Write for Stream {
             #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
             Self::Web(s) => s.flush(),
             Self::Eagler(s) => s.flush(),
+            Self::Detached => Err(detached()),
         }
     }
+}
+
+/// A connection's stream, given up by [`Connection::detach`].
+pub enum Socket {
+    Tcp(TcpStream),
+    Memory(Pipe),
 }
 
 /// Packets received/sent and bytes in/out, for the debug screen.
@@ -459,6 +517,96 @@ impl Connection {
     pub fn split(self) -> (ConnReader, ConnWriter) {
         (self.reader, self.writer)
     }
+    /// Take the stream out, to read and write it elsewhere (a poller's thread,
+    /// without blocking): the halves keep the framing, compression and
+    /// encryption, and bytes already read past the last packet. What arrives
+    /// goes in through [`ConnReader::read_from`]; [`ConnWriter::frame_into`]
+    /// makes what is to be sent. Their own reads and writes fail from now on.
+    pub fn detach(mut self) -> (Socket, ConnReader, ConnWriter) {
+        let write = std::mem::replace(&mut self.writer.stream, Stream::Detached);
+        let socket = match std::mem::replace(&mut self.reader.stream, Stream::Detached) {
+            Stream::Tcp(s) => Socket::Tcp(s),
+            Stream::Memory(p) => Socket::Memory(p),
+            Stream::Detached => unreachable!("a connection is detached once, by value"),
+            // A WebSocket: no poller watches it, so two threads carry its
+            // bytes through a pipe, which one can.
+            read => Socket::Memory(bridge(read, write)),
+        };
+        (socket, self.reader, self.writer)
+    }
+}
+
+/// The end of a pipe that carries `read`'s bytes in, and what is written to
+/// it out through `write` (a clone of the same stream), on two threads.
+/// Either side closing closes the other.
+fn bridge(mut read: Stream, mut write: Stream) -> Pipe {
+    let (ours, theirs) = Pipe::pair();
+    let (mut inbound, mut outbound) = (ours.try_clone(), ours);
+    let spawn = |name: &str, f: Box<dyn FnOnce() + Send>| {
+        if let Err(e) = horizon_os::thread::Builder::new()
+            .name(name.to_owned())
+            .spawn(f)
+        {
+            log::warn!("Horizon: no {name} thread: {e}");
+        }
+    };
+    spawn(
+        "horizon-net-bridge-in",
+        Box::new(move || {
+            let mut buf = vec![0u8; 16 << 10];
+            loop {
+                match read.read(&mut buf) {
+                    Ok(0) => break,
+                    Ok(n) => {
+                        if inbound.write_all(&buf[..n]).is_err() {
+                            break;
+                        }
+                    }
+                    Err(e)
+                        if matches!(
+                            e.kind(),
+                            std::io::ErrorKind::Interrupted
+                                | std::io::ErrorKind::WouldBlock
+                                | std::io::ErrorKind::TimedOut
+                        ) => {}
+                    Err(_) => break,
+                }
+            }
+            inbound.shutdown();
+        }),
+    );
+    spawn(
+        "horizon-net-bridge-out",
+        Box::new(move || {
+            let mut buf = vec![0u8; 64 << 10];
+            loop {
+                match outbound.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        if write
+                            .write_all(&buf[..n])
+                            .and_then(|()| write.flush())
+                            .is_err()
+                        {
+                            break;
+                        }
+                    }
+                }
+            }
+            write.shutdown();
+            outbound.shutdown();
+        }),
+    );
+    theirs
+}
+
+/// The next frame in a reader's buffer.
+enum Next {
+    Packet((i32, Vec<u8>)),
+    /// A frame with no packet in it.
+    Empty,
+    /// No whole frame yet: the bytes it needs, once its length is known (0 before).
+    Partial(usize),
 }
 impl ConnReader {
     /// Read exactly `len` bytes as they are, with no framing.
@@ -473,32 +621,67 @@ impl ConnReader {
             return Ok(packet);
         }
         loop {
-            let pending = &self.buffer[self.start..self.end];
-            let mut wanted = 0;
-            if let Some((prefix, len)) = frame::header(pending)? {
-                if pending.len() >= prefix + len {
-                    let frame = self.start + prefix..self.start + prefix + len;
-                    self.start = frame.end;
-                    if let Some(packet) = self.packet(frame)? {
-                        self.counters.received.fetch_add(1, Ordering::Relaxed);
-                        match &self.adapter {
-                            None => return Ok(packet),
-                            Some(a) => {
-                                if let Some(packet) = a.clientbound(packet.0, packet.1)? {
-                                    return Ok(packet);
-                                }
-                                if let Some(packet) = a.next_incoming() {
-                                    return Ok(packet);
-                                }
-                            }
+            match self.next()? {
+                Next::Packet(packet) => match &self.adapter {
+                    None => return Ok(packet),
+                    Some(a) => {
+                        if let Some(packet) = a.clientbound(packet.0, packet.1)? {
+                            return Ok(packet);
+                        }
+                        if let Some(packet) = a.next_incoming() {
+                            return Ok(packet);
                         }
                     }
-                    continue;
-                }
-                wanted = prefix + len;
+                },
+                Next::Empty => {}
+                Next::Partial(wanted) => self.fill(wanted)?,
             }
-            self.fill(wanted)?;
         }
+    }
+    /// The next whole packet among the bytes already read, without reading
+    /// more: for a detached reader, after [`Self::read_from`]. No adapter
+    /// renumbers it (a server's connection has none).
+    pub fn buffered(&mut self) -> Result<Option<(i32, Vec<u8>)>> {
+        loop {
+            match self.next()? {
+                Next::Packet(packet) => return Ok(Some(packet)),
+                Next::Empty => {}
+                Next::Partial(_) => return Ok(None),
+            }
+        }
+    }
+    /// Read once from `source` (a detached stream, without blocking) into the
+    /// buffer: the bytes read, 0 at the end of the stream, or its error
+    /// (`WouldBlock` when nothing waits).
+    pub fn read_from(&mut self, source: &mut impl Read) -> std::io::Result<usize> {
+        let wanted = match self.next_header() {
+            Ok(Some(wanted)) => wanted,
+            _ => 0,
+        };
+        self.fill_from(source, wanted)
+    }
+    /// The bytes the next frame needs, once its length prefix is whole.
+    fn next_header(&self) -> Result<Option<usize>> {
+        Ok(frame::header(&self.buffer[self.start..self.end])?.map(|(prefix, len)| prefix + len))
+    }
+    /// Take the next frame off the buffer, if it is whole.
+    fn next(&mut self) -> Result<Next> {
+        let Some(wanted) = self.next_header()? else {
+            return Ok(Next::Partial(0));
+        };
+        if self.end - self.start < wanted {
+            return Ok(Next::Partial(wanted));
+        }
+        let (prefix, _) = frame::header(&self.buffer[self.start..self.end])?.expect("whole");
+        let frame = self.start + prefix..self.start + wanted;
+        self.start = frame.end;
+        Ok(match self.packet(frame)? {
+            Some(packet) => {
+                self.counters.received.fetch_add(1, Ordering::Relaxed);
+                Next::Packet(packet)
+            }
+            None => Next::Empty,
+        })
     }
     /// The packet in `buffer[frame]`, or `None` for a frame with no packet in it:
     /// vanilla's PacketDecoder only decodes a packet from a readable buffer, so an
@@ -527,6 +710,31 @@ impl ConnReader {
     /// Read once from the stream into the buffer, with room for at least
     /// `frame` bytes of unconsumed data (a whole frame, once its length is known).
     fn fill(&mut self, frame: usize) -> Result<()> {
+        let mut stream = std::mem::replace(&mut self.stream, Stream::Detached);
+        let read = self.fill_from(&mut stream, frame);
+        self.stream = stream;
+        match read {
+            Ok(0) => Err(Error::end_of_stream()),
+            Ok(_) => Ok(()),
+            // A signal (a profiler attaching, SIGCHLD...) cut the read short
+            // before any byte came: nothing is wrong with the connection, the
+            // caller reads again.
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => Ok(()),
+            // The read timeout passed: Windows reports TimedOut, Unix
+            // WouldBlock.
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
+                ) =>
+            {
+                Err(Error::timed_out())
+            }
+            Err(e) => Err(e.into()),
+        }
+    }
+    /// [`Self::fill`] from `source`: the bytes read, decrypted into the buffer.
+    fn fill_from(&mut self, source: &mut impl Read, frame: usize) -> std::io::Result<usize> {
         const READ: usize = 1 << 16;
         let pending = self.end - self.start;
         let room = READ.max(frame.saturating_sub(pending));
@@ -537,25 +745,7 @@ impl ConnReader {
                 self.buffer.resize(pending + room, 0);
             }
         }
-        let n = match self.stream.read(&mut self.buffer[self.end..]) {
-            Ok(0) => return Err(Error::end_of_stream()),
-            Ok(n) => n,
-            // A signal (a profiler attaching, SIGCHLD...) cut the read short
-            // before any byte came: nothing is wrong with the connection, the
-            // caller reads again.
-            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => return Ok(()),
-            // The read timeout passed: Windows reports TimedOut, Unix
-            // WouldBlock.
-            Err(e)
-                if matches!(
-                    e.kind(),
-                    std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock
-                ) =>
-            {
-                return Err(Error::timed_out());
-            }
-            Err(e) => return Err(e.into()),
-        };
+        let n = source.read(&mut self.buffer[self.end..])?;
         self.counters
             .bytes_in
             .fetch_add(n as i64, Ordering::Relaxed);
@@ -564,7 +754,7 @@ impl ConnReader {
             c.decrypt(data);
         }
         self.end += n;
-        Ok(())
+        Ok(n)
     }
     /// A [`Closer`] for this connection.
     pub fn closer(&self) -> Result<Closer> {
@@ -598,16 +788,25 @@ impl ConnWriter {
     /// Send a frame whose contents [`frame::contents`] made with this
     /// writer's threshold.
     pub fn send_contents(&mut self, contents: &[u8]) -> Result<()> {
-        let mut framed = frame::prefixed(contents);
-        if let Some(c) = &mut self.encrypt {
-            c.encrypt(&mut framed);
-        }
+        let mut framed = Vec::with_capacity(contents.len() + 3);
+        self.frame_into(contents, &mut framed);
         self.stream.write_all(&framed)?;
+        Ok(())
+    }
+    /// The bytes [`Self::send_contents`] writes, appended to `out` instead: a
+    /// detached writer's, written later, in the order framed (the cipher
+    /// runs on).
+    pub fn frame_into(&mut self, contents: &[u8], out: &mut Vec<u8>) {
+        let at = out.len();
+        crate::buf::write_varint(out, contents.len() as i32);
+        out.extend_from_slice(contents);
+        if let Some(c) = &mut self.encrypt {
+            c.encrypt(&mut out[at..]);
+        }
         self.counters.sent.fetch_add(1, Ordering::Relaxed);
         self.counters
             .bytes_out
-            .fetch_add(framed.len() as i64, Ordering::Relaxed);
-        Ok(())
+            .fetch_add((out.len() - at) as i64, Ordering::Relaxed);
     }
     pub fn shutdown(&self) {
         self.stream.shutdown();

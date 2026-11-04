@@ -462,7 +462,7 @@ impl Game<'_> {
                 .len()
         };
         // Level.isThundering: a thunder level above 0.9 where the sky is open.
-        let thundering = self.dim == Dim::Overworld && world.weather.levels(1.0).1 > 0.9;
+        let thundering = self.can_have_weather() && world.weather.levels(1.0).1 > 0.9;
         let ctx = AnimateContext {
             world,
             facts,

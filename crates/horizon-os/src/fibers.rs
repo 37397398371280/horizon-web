@@ -125,7 +125,8 @@ type Main = Box<dyn FnOnce() + Send>;
 const GREEN: &[&str] = &[
     "Server thread",
     "horizon-local-conn",
-    "horizon-lan-out-",
+    // The server's network thread (`horizon-net-0`, lan/io_pool.rs), and the
+    // client's own.
     "horizon-net",
     "Profile fetcher",
     "Worldgen loader",
