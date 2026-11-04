@@ -308,7 +308,7 @@ mod server_links;
 mod server_packs;
 mod server_travel;
 mod shader_packs;
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 mod shared_world;
 mod shelf;
 mod shield;
@@ -7679,7 +7679,7 @@ impl Game<'_> {
         if self.agent.hold_server {
             return Ok(());
         }
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         self.poll_shared_world();
         // `Player.entityInteractionRange`/`blockInteractionRange` for the tick's
         // picks: the attribute carries creative's and a server's modifiers.
@@ -19094,10 +19094,6 @@ impl Game<'_> {
             }
             return;
         }
-        // The page's build without shared memory asks its server without
-        // waiting: a screen waiting for the answer opens with it.
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        self.poll_world_options();
         if let Err(error) = horizon_client::spans::time("world_entry", || self.resume_world_entry())
         {
             self.error = Some(error);

@@ -148,8 +148,8 @@ struct Inner {
 pub struct Pool {
     inner: Arc<Inner>,
     threads: usize,
-    /// Workers that started: none in the page's build without threads,
-    /// whose frames run the jobs themselves ([`Pool::pump`]).
+    /// Workers that started: with none (the browser refused them), the
+    /// page's frames run the jobs themselves ([`Pool::pump`]).
     started: usize,
 }
 
@@ -248,7 +248,7 @@ impl Pool {
         self.started > 0
     }
 
-    /// The page's stand-in for the workers, in its build without threads:
+    /// The page's stand-in for the workers when none started:
     /// runs queued jobs, most urgent first, as worker 0 until `deadline`.
     /// Whether jobs are left.
     #[cfg(target_arch = "wasm32")]
@@ -338,11 +338,8 @@ impl Drop for Registration {
         // while it holds the sources' read lock); wait for those that did.
         entry.retired.store(true, Ordering::SeqCst);
         // The page's thread may not wait: it spins until the workers are done.
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         let page = !horizon_os::workers::in_worker();
-        // Without threads no job runs anywhere else.
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        let page = true;
         #[cfg(target_arch = "wasm32")]
         if page {
             while entry.running.load(Ordering::SeqCst) > 0 {

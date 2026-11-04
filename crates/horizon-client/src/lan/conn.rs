@@ -351,10 +351,7 @@ pub fn flush_all<'a>(senders: impl IntoIterator<Item = &'a PlayerSender>) {
 /// LegacyQueryHandler: the pre-1.7 server list ping. What the first read
 /// holds decides the reply (1.3 and older: no more bytes; 1.4 and 1.5: 0x01;
 /// 1.6: 0x01 then the MC|PingHost payload); anything else gets no reply.
-#[cfg_attr(
-    all(target_arch = "wasm32", target_feature = "atomics"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 fn serve_legacy(mut stream: TcpStream, shared: &Shared) -> Result<(), String> {
     use std::io::{Read, Write};
     let _ = stream.set_read_timeout(Some(Duration::from_millis(100)));
@@ -425,10 +422,7 @@ fn serve_legacy(mut stream: TcpStream, shared: &Shared) -> Result<(), String> {
 
 /// Serve an accepted connection, which holds `counted`'s place among the
 /// server's until it closes.
-#[cfg_attr(
-    all(target_arch = "wasm32", target_feature = "atomics"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 pub(super) fn serve(
     stream: TcpStream,
     address: std::net::SocketAddr,
@@ -464,15 +458,12 @@ pub(super) fn serve(
 }
 
 /// How long one write may wait on a peer that reads nothing: as long as a read may wait.
-#[cfg_attr(
-    all(target_arch = "wasm32", target_feature = "atomics"),
-    allow(dead_code)
-)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
 const WRITE_TIMEOUT: Duration = READ_TIMEOUT;
 
 /// A player of a world shared through a relay (the browser build), over
 /// the data channel the relay set up.
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 pub(super) fn serve_web(
     socket: horizon_os::net::WebSocket,
     address: std::net::SocketAddr,

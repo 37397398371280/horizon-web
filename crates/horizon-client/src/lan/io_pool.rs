@@ -669,8 +669,7 @@ impl Conn {
 }
 
 /// mio's part the pool uses, for the browser: nothing to register, and a
-/// poll that waits for the waker or the timeout. Through horizon_os, so a
-/// green thread (the build without threads) gives the page back meanwhile.
+/// poll that waits for the waker or the timeout.
 #[cfg(target_arch = "wasm32")]
 mod poller {
     use horizon_os::time::Duration;

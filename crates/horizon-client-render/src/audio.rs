@@ -415,22 +415,6 @@ impl Backend for MixerBackend {
         if !looping && self.duplicate(channel, (namespace, &path)) {
             return;
         }
-        if cfg!(all(target_arch = "wasm32", not(target_feature = "atomics"))) {
-            // The web build without threads has none to decode on: decode now.
-            let key = format!("{namespace}:{path}");
-            let cached = lock(&self.cache).ok().and_then(|mut c| c.get(&key));
-            let samples = cached.unwrap_or_else(|| {
-                let samples = decode(&file).map(|(s, r)| (Arc::new(s), r));
-                if !sound.stream
-                    && let Ok(mut c) = lock(&self.cache)
-                {
-                    c.insert(key, samples.clone());
-                }
-                samples
-            });
-            attach(&self.mixer, channel, samples, sound.stream && looping);
-            return;
-        }
         if sound.stream {
             // A streamed sound loops by restarting its stream.
             let mixer = self.mixer.clone();

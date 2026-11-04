@@ -158,7 +158,7 @@ enum Stream {
     /// A browser's connection to this server.
     WebSocket(crate::websocket::ServerSocket),
     /// This page's connection to a server.
-    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+    #[cfg(target_arch = "wasm32")]
     Web(horizon_os::net::WebSocket),
     /// This page's connection to an Eaglercraft server.
     Eagler(crate::eagler::EaglerSocket),
@@ -174,7 +174,7 @@ impl Stream {
             Self::Tcp(s) => Self::Tcp(s.try_clone()?),
             Self::Memory(p) => Self::Memory(p.try_clone()),
             Self::WebSocket(s) => Self::WebSocket(s.try_clone()?),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => Self::Web(s.try_clone()),
             Self::Eagler(s) => Self::Eagler(s.try_clone()?),
             Self::Detached => Self::Detached,
@@ -188,7 +188,7 @@ impl Stream {
                 Ok(())
             }
             Self::WebSocket(s) => s.stream().set_read_timeout(timeout),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => {
                 s.set_read_timeout(timeout);
                 Ok(())
@@ -207,7 +207,7 @@ impl Stream {
             }
             Self::Memory(p) => p.shutdown(),
             Self::WebSocket(s) => s.shutdown(),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => s.shutdown(),
             Self::Eagler(s) => s.shutdown(),
             Self::Detached => {}
@@ -220,7 +220,7 @@ impl Read for Stream {
             Self::Tcp(s) => s.read(out),
             Self::Memory(p) => p.read(out),
             Self::WebSocket(s) => s.read(out),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => s.read(out),
             Self::Eagler(s) => s.read(out),
             Self::Detached => Err(detached()),
@@ -233,7 +233,7 @@ impl Write for Stream {
             Self::Tcp(s) => s.write(data),
             Self::Memory(p) => p.write(data),
             Self::WebSocket(s) => s.write(data),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => s.write(data),
             Self::Eagler(s) => s.write(data),
             Self::Detached => Err(detached()),
@@ -244,7 +244,7 @@ impl Write for Stream {
             Self::Tcp(s) => s.flush(),
             Self::Memory(p) => p.flush(),
             Self::WebSocket(s) => s.flush(),
-            #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+            #[cfg(target_arch = "wasm32")]
             Self::Web(s) => s.flush(),
             Self::Eagler(s) => s.flush(),
             Self::Detached => Err(detached()),
@@ -314,7 +314,7 @@ pub struct Connection {
 }
 impl Connection {
     pub fn connect(host: &str, port: u16, timeout: Duration) -> Result<Self> {
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         return Self::connect_web(host, port, timeout);
         #[allow(unreachable_code)]
         let addrs: Vec<_> = (host, port)
@@ -335,7 +335,7 @@ impl Connection {
         port: u16,
         timeout: Duration,
     ) -> Result<(Self, String, u16)> {
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         return Self::connect_web(host, port, timeout).map(|c| (c, host.to_owned(), port));
         #[allow(unreachable_code)]
         let resolved = crate::resolver::resolve(host, port)?;
@@ -392,7 +392,7 @@ impl Connection {
         }
     }
     /// The page has no TCP: a WebSocket to the server's port instead.
-    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+    #[cfg(target_arch = "wasm32")]
     fn connect_web(host: &str, port: u16, timeout: Duration) -> Result<Self> {
         let socket = horizon_os::net::WebSocket::connect(host, port, timeout)
             .map_err(|e| Error::new(format!("Connection refused: {e}")))?;
@@ -401,13 +401,13 @@ impl Connection {
     /// An Eaglercraft server at a `ws:`/`wss:` URL ([`crate::eagler`]); only
     /// the browser build has the WebSocket for it.
     pub fn connect_eagler(url: &str, timeout: Duration) -> Result<Self> {
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         {
             let socket = horizon_os::net::WebSocket::connect_url(url, timeout)
                 .map_err(|e| Error::new(format!("Connection refused: {e}")))?;
             Self::eagler(Box::new(socket))
         }
-        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = timeout;
             Err(Error::new(format!(
@@ -418,13 +418,13 @@ impl Connection {
     /// A shared world's host, through a relay that knows its join code
     /// (horizon-os net.rs); only the browser build has WebRTC.
     pub fn connect_shared(code: &str, relays: &[String], timeout: Duration) -> Result<Self> {
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         {
             let socket = horizon_os::net::WebSocket::connect_shared(code, relays, timeout)
                 .map_err(|e| Error::new(e.to_string()))?;
             Self::over(Stream::Web(socket))
         }
-        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+        #[cfg(not(target_arch = "wasm32"))]
         {
             let _ = (code, relays, timeout);
             Err(Error::new(
@@ -433,7 +433,7 @@ impl Connection {
         }
     }
     /// A player who joined a world this page shares, over their data channel.
-    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+    #[cfg(target_arch = "wasm32")]
     pub fn from_web(socket: horizon_os::net::WebSocket) -> Result<Self> {
         Self::over(Stream::Web(socket))
     }
@@ -1094,7 +1094,7 @@ mod tests {
 }
 
 /// The browser's socket as the Eaglercraft plugin's message socket.
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 impl crate::eagler::Messages for horizon_os::net::WebSocket {
     fn send(&self, message: crate::eagler::Message) -> std::io::Result<()> {
         use horizon_os::net::Message;

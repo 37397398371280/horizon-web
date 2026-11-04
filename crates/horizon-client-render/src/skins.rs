@@ -1133,13 +1133,7 @@ fn http_get(url: &str) -> Option<Vec<u8>> {
 /// clock, which panics), so the browser fetches it, on the download's worker.
 #[cfg(target_arch = "wasm32")]
 fn http_get(url: &str) -> Option<Vec<u8>> {
-    #[cfg(target_feature = "atomics")]
-    return horizon_os::net::http_get(url).filter(|b| b.len() <= 16 << 20);
-    #[cfg(not(target_feature = "atomics"))]
-    {
-        let _ = url;
-        None
-    }
+    horizon_os::net::http_get(url).filter(|b| b.len() <= 16 << 20)
 }
 
 /// SHA-1 (FIPS 180-4).

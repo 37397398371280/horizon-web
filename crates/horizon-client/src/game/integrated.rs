@@ -93,9 +93,6 @@ pub(super) struct Integrated {
     tasks: Sender<Task>,
     /// The world's name (`level.dat`'s `LevelName`), for the pause menu.
     pub world_name: String,
-    /// World Options asked for and not answered yet (`ask`).
-    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-    pub world_options: Option<Receiver<ServerOptions>>,
 }
 impl Integrated {
     /// The generator of the server's level in `dimension`, once it has run.
@@ -217,20 +214,6 @@ impl Integrated {
             }
             Err(RecvTimeoutError::Disconnected) => None,
         }
-    }
-    /// `call` without waiting: the answer comes on the receiver. The page's
-    /// build without shared memory runs its server as a green thread, which
-    /// gets to the task only once the page is back in the browser.
-    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-    pub fn ask<T: Send + 'static>(
-        &self,
-        f: impl FnOnce(&mut Game<'_>) -> T + Send + 'static,
-    ) -> Receiver<T> {
-        let (tx, rx) = sync_channel(1);
-        let _ = self.tasks.send(Box::new(move |g| {
-            let _ = tx.send(f(g));
-        }));
-        rx
     }
     /// `IntegratedServer.halt(true)`: returns once the world is saved and let go.
     pub fn stop(mut self) -> Result<()> {
@@ -462,8 +445,6 @@ impl Game<'_> {
             thread: Some(thread),
             tasks,
             world_name: String::new(),
-            #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-            world_options: None,
         };
         self.integrated_starting = Some(Starting {
             handle,
@@ -1022,7 +1003,7 @@ impl Game<'_> {
         if s.flags.published.load(Ordering::Relaxed) != 0 {
             return Err("already published".into());
         }
-        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+        #[cfg(not(target_arch = "wasm32"))]
         let (listener, port) = {
             let listener = Lan::bind(None, settings.port).map_err(|e| e.to_string())?;
             let port = listener.local_addr().map_err(|e| e.to_string())?.port();
@@ -1031,7 +1012,7 @@ impl Game<'_> {
         };
         // The browser shares the world through a relay; its code comes later
         // (shared_world.rs tells the player).
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         let (listener, port) = (
             Lan::share(&self.level.name),
             horizon_client::lan::SHARED_PORT,

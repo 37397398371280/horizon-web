@@ -405,7 +405,6 @@ impl Mailbox {
     fn try_recv(&self) -> Option<Done> {
         self.try_lock()?.pop_front()
     }
-    #[cfg(any(not(target_arch = "wasm32"), target_feature = "atomics"))]
     fn recv_timeout(&self, timeout: horizon_os::time::Duration) -> Option<Done> {
         let done = self.done.lock().unwrap();
         let (mut done, _) = horizon_os::sync::wait_timeout_while(
@@ -2458,13 +2457,10 @@ impl Streaming {
                 }
             }
         }
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        unreachable!("the page's build without threads has no workers");
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         if !horizon_os::workers::in_worker() {
             return self.shared.done.try_recv();
         }
-        #[cfg(any(not(target_arch = "wasm32"), target_feature = "atomics"))]
         self.shared.done.recv_timeout(timeout)
     }
 }

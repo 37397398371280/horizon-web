@@ -74,9 +74,6 @@ mod web {
 
     #[wasm_bindgen(inline_js = r#"
 export function horizon_fetch_sync(url) {
-    // The offline page (web/package.py) holds its files itself: a file:// page can't fetch.
-    const held = globalThis.horizonHeldFile?.(url);
-    if (held) return held;
     const xhr = new XMLHttpRequest();
     xhr.open("GET", url, false);
     // Synchronous requests on the main thread can't ask for an ArrayBuffer:

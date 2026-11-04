@@ -388,18 +388,11 @@ pub(super) fn spawn_loader(
     };
     // On the page, a worker: the renderer opens and the loading screen draws
     // while it loads.
-    #[cfg(any(not(target_arch = "wasm32"), target_feature = "atomics"))]
     let handle = Some(
         horizon_os::thread::Builder::new()
             .name("resource-loader".into())
             .spawn(work)?,
     );
-    // No threads on the page: load now, before the window opens.
-    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-    let handle = {
-        work();
-        None
-    };
     Ok((receiver, handle))
 }
 

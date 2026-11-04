@@ -286,7 +286,6 @@ pub fn horizon_start(args: Vec<String>) {
     std::panic::set_hook(Box::new(|info| {
         horizon_console(1, &format!("Horizon panicked: {info}"));
     }));
-    #[cfg(target_feature = "atomics")]
     crate::net::install();
     let start = START.lock().unwrap_or_else(|e| e.into_inner()).take();
     match start {

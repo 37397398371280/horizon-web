@@ -4,9 +4,8 @@
 #
 #   web/build.sh            the release build: LTO, then wasm-opt (binaryen) when installed
 #   PROFILE=fast web/build.sh  optimized, no LTO or wasm-opt: quick to rebuild while working
-#   THREADS=0 web/build.sh  stable Rust, no threads (everything on the page's)
 #   WASM_OPT=0 web/build.sh skip wasm-opt
-#   DIST=web/dist-st web/build.sh  build into another folder (web/package.py's single-threaded build)
+#   DIST=<folder> web/build.sh  build into another folder
 #   BUNDLE=0 web/build.sh   only the game and the page, not the resources
 #
 # Threads are Web Workers on shared memory, which std only supports when it is
@@ -23,26 +22,19 @@ resources="${HORIZON_RESOURCES:-.local/horizon-client/26.3}"
 dist="${DIST:-web/dist}"
 
 nightly=nightly-2026-10-14
-cargo=(cargo)
-if [ "${THREADS:-1}" != 0 ]; then
-    # Replaces .cargo/config.toml's flags for the target, so it repeats them.
-    # The linker flags give the module a shared memory the page hands each
-    # worker, and the thread-local storage symbols wasm-bindgen sets up per thread.
-    flags=(
-        '--cfg getrandom_backend="wasm_js"'
-        -C target-feature=+atomics,+bulk-memory,+mutable-globals
-        -C link-arg=--shared-memory -C link-arg=--import-memory
-        -C link-arg=--max-memory=4294967296
-        -C link-arg=--export=__wasm_init_tls -C link-arg=--export=__tls_size
-        -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base
-    )
-    export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="${flags[*]}"
-    cargo=(cargo "+$nightly" -Z build-std=std,panic_abort)
-else
-    # Threads are green threads on the page's (horizon-os's fibers), which
-    # switch Rust's stack pointer: the page reaches it as an export.
-    export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS='--cfg getrandom_backend="wasm_js" -C link-arg=--export=__stack_pointer'
-fi
+# Replaces .cargo/config.toml's flags for the target, so it repeats them.
+# The linker flags give the module a shared memory the page hands each
+# worker, and the thread-local storage symbols wasm-bindgen sets up per thread.
+flags=(
+    '--cfg getrandom_backend="wasm_js"'
+    -C target-feature=+atomics,+bulk-memory,+mutable-globals
+    -C link-arg=--shared-memory -C link-arg=--import-memory
+    -C link-arg=--max-memory=4294967296
+    -C link-arg=--export=__wasm_init_tls -C link-arg=--export=__tls_size
+    -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base
+)
+export CARGO_TARGET_WASM32_UNKNOWN_UNKNOWN_RUSTFLAGS="${flags[*]}"
+cargo=(cargo "+$nightly" -Z build-std=std,panic_abort)
 "${cargo[@]}" build --target wasm32-unknown-unknown --profile "$profile" \
     -p horizon-client --bin horizon-client --no-default-features --features audio,controllers
 

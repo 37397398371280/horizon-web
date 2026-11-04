@@ -1,8 +1,7 @@
 // Loads the game, installs the prepared resources and the player's saved
 // files in its virtual filesystem, then starts it and keeps saving the
 // player's files in the browser's storage (OPFS). A service worker (sw.js)
-// keeps the large files for later visits. The offline page (web/package.py)
-// sets globalThis.horizonOffline, which hands over the files it holds instead.
+// keeps the large files for later visits.
 import "./audio.js"; // before the game's glue, which keeps the AudioContext it finds
 
 const ROOT = ".local/horizon-client/26.3";
@@ -50,15 +49,13 @@ async function cacheWorker() {
 }
 
 // The large files' addresses with their content hash (build.json), which the
-// service worker keeps them by. A page that can't share memory (not cross-origin
-// isolated) runs the single-threaded build when the folder has it (pkg-st/).
+// service worker keeps them by.
 async function versioned() {
     const files = await fetch("build.json", { cache: "no-store" })
         .then((r) => (r.ok ? r.json() : {}))
         .catch(() => ({}));
     const at = (path) => (files[path] ? `${path}?v=${files[path]}` : path);
-    const pkg = !window.crossOriginIsolated && files["pkg-st/horizon-client_bg.wasm"] ? "pkg-st" : "pkg";
-    return { pkg, wasm: at(`${pkg}/horizon-client_bg.wasm`), boot: at("fs/boot.tar.gz") };
+    return { wasm: at("pkg/horizon-client_bg.wasm"), boot: at("fs/boot.tar.gz") };
 }
 
 async function download(url, label) {
@@ -78,8 +75,7 @@ async function download(url, label) {
 
 // The player's files (options, saves) live under this folder of the
 // origin's private file system, laid out as in the virtual filesystem. Where
-// that is refused (a file:// page: the offline file), in IndexedDB instead,
-// one record per path.
+// that is refused, in IndexedDB instead, one record per path.
 async function savedRoot() {
     try {
         return await (await navigator.storage.getDirectory()).getDirectoryHandle("horizon", { create: true });
@@ -222,9 +218,12 @@ function saveChanges(glue, root) {
 // The game's glue, its module and the resources, from the server.
 async function served() {
     await cacheWorker();
+    // The game's threads share memory, which browsers allow only on a
+    // cross-origin isolated page.
+    if (!window.crossOriginIsolated) throw new Error("the page can't share memory with the game's threads");
     const files = await versioned();
     status.textContent = "Loading the game…";
-    const glue = await import(`./${files.pkg}/horizon-client.js`);
+    const glue = await import("./pkg/horizon-client.js");
     // Runs the game's main, which only registers the game to start.
     await glue.default({ module_or_path: files.wasm });
     const gz = await download(files.boot, "Downloading resources");
@@ -236,7 +235,7 @@ async function served() {
 
 async function main() {
     if (!(await webgpu())) return;
-    const { glue, tar, manifest, base } = await (globalThis.horizonOffline ?? served)();
+    const { glue, tar, manifest, base } = await served();
     status.textContent = "Installing resources…";
     const t0 = performance.now();
     const installed = glue.horizon_install_tar(ROOT, tar);
@@ -271,8 +270,8 @@ async function main() {
 
 main().catch((e) => {
     console.error(e);
-    // The threaded build shares memory between workers, which browsers allow
-    // only on a cross-origin isolated page.
+    // The game's workers share memory, which browsers allow only on a
+    // cross-origin isolated page.
     const isolation = window.crossOriginIsolated ? "" :
         "\n\nThe page isn't cross-origin isolated: its server must send " +
         "Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp.";

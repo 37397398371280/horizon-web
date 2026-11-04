@@ -4,15 +4,18 @@
 //! files fetched from the page's origin) and the browser's clocks, with the
 //! same API so call sites read the same on both.
 
-pub mod env;
+// The browser build runs its threads as Web Workers on shared memory, which
+// std only supports when it is rebuilt with atomics (web/build.sh).
 #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-pub mod fibers;
+compile_error!("the browser build needs threads: build it with web/build.sh");
+
+pub mod env;
 pub mod fs;
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 pub mod net;
 #[cfg(target_arch = "wasm32")]
 pub mod web;
-#[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+#[cfg(target_arch = "wasm32")]
 pub mod workers;
 
 /// Waits for `future`. On native, as long as it takes; on the web, where the
@@ -65,17 +68,11 @@ pub mod time {
 
 /// std's threads. On the page, scoped threads run one after another on the
 /// caller's and sleeping on the page's thread returns at once (it may not
-/// block). The shared-memory build (`+atomics`) starts other threads as Web
-/// Workers ([`crate::workers`]); the plain build as green threads on the
-/// page's ([`crate::fibers`]).
+/// block). Other threads start as Web Workers ([`crate::workers`]).
 pub mod thread {
     pub use std::thread::*;
 
-    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-    pub use crate::fibers::{
-        Builder, JoinHandle, Thread, available_parallelism, sleep, spawn, yield_now,
-    };
-    #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+    #[cfg(target_arch = "wasm32")]
     pub use crate::workers::{Builder, JoinHandle, Thread, available_parallelism, sleep, spawn};
     #[cfg(target_arch = "wasm32")]
     pub use sequential::{Scope, ScopedJoinHandle, scope};
@@ -131,8 +128,7 @@ pub mod thread {
 
 /// std's timed waits that read std's clock, which panics on the web: there
 /// they time themselves with the browser's. Never on the page's own thread,
-/// which may not wait: it only checks once. A green thread (the plain build's,
-/// [`crate::fibers`]) gives the page back while it waits, its lock let go.
+/// which may not wait: it only checks once.
 pub mod sync {
     use crate::time::Duration;
     use std::sync::{
@@ -142,16 +138,15 @@ pub mod sync {
 
     /// `mutex.lock()`. The page's thread, which may not wait (the browser
     /// traps it), spins until the lock is free instead: use it for locks the
-    /// page shares with workers, which hold them only briefly. A green thread
-    /// lets the others run until it is free.
+    /// page shares with workers, which hold them only briefly.
     pub fn lock<T: ?Sized>(mutex: &Mutex<T>) -> LockResult<MutexGuard<'_, T>> {
         #[cfg(target_arch = "wasm32")]
-        if !can_wait() || cfg!(not(target_feature = "atomics")) {
+        if !can_wait() {
             loop {
                 match mutex.try_lock() {
                     Ok(guard) => return Ok(guard),
                     Err(std::sync::TryLockError::Poisoned(e)) => return Err(e),
-                    Err(std::sync::TryLockError::WouldBlock) => busy(),
+                    Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
                 }
             }
         }
@@ -161,48 +156,20 @@ pub mod sync {
     /// `lock.write()`, spinning on the page's thread as [`lock`] does.
     pub fn write<T: ?Sized>(lock: &RwLock<T>) -> LockResult<RwLockWriteGuard<'_, T>> {
         #[cfg(target_arch = "wasm32")]
-        if !can_wait() || cfg!(not(target_feature = "atomics")) {
+        if !can_wait() {
             loop {
                 match lock.try_write() {
                     Ok(guard) => return Ok(guard),
                     Err(std::sync::TryLockError::Poisoned(e)) => return Err(e),
-                    Err(std::sync::TryLockError::WouldBlock) => busy(),
+                    Err(std::sync::TryLockError::WouldBlock) => std::hint::spin_loop(),
                 }
             }
         }
         lock.write()
     }
 
-    /// A lock held elsewhere: spin on the page while a worker holds it; on the
-    /// plain build, where only a waiting green thread can hold it, let it run.
-    #[cfg(target_arch = "wasm32")]
-    fn busy() {
-        #[cfg(target_feature = "atomics")]
-        std::hint::spin_loop();
-        #[cfg(not(target_feature = "atomics"))]
-        if can_wait() {
-            crate::fibers::yield_now();
-        } else {
-            panic!("the page's thread needs a lock a waiting green thread holds");
-        }
-    }
-
-    /// `rx.recv()`. A green thread looks again shortly, the others running
-    /// meanwhile.
+    /// `rx.recv()`.
     pub fn recv<T>(rx: &Receiver<T>) -> Result<T, RecvError> {
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        loop {
-            use std::sync::mpsc::TryRecvError;
-            match rx.try_recv() {
-                Ok(v) => return Ok(v),
-                Err(TryRecvError::Disconnected) => return Err(RecvError),
-                Err(TryRecvError::Empty) => {
-                    assert!(can_wait(), "the page's thread may not wait");
-                    crate::thread::sleep(Duration::from_millis(1));
-                }
-            }
-        }
-        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
         rx.recv()
     }
 
@@ -233,9 +200,7 @@ pub mod sync {
 
     /// `rx.recv_timeout(timeout)` for a reply that a thread already running
     /// sends shortly. The page's thread, which may not wait, looks again
-    /// until the deadline instead of giving up at once; on the plain build,
-    /// whose green threads run only once the page is back in the browser, it
-    /// looks once.
+    /// until the deadline instead of giving up at once.
     pub fn recv_reply<T>(rx: &Receiver<T>, timeout: Duration) -> Result<T, RecvTimeoutError> {
         #[cfg(not(target_arch = "wasm32"))]
         {
@@ -243,7 +208,7 @@ pub mod sync {
         }
         #[cfg(target_arch = "wasm32")]
         {
-            if can_wait() || cfg!(not(target_feature = "atomics")) {
+            if can_wait() {
                 return recv_timeout(rx, timeout);
             }
             use std::sync::mpsc::TryRecvError;
@@ -272,16 +237,6 @@ pub mod sync {
     where
         F: FnMut(&mut T) -> bool,
     {
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        {
-            let _ = condvar;
-            let (mut guard, mut condition) = (guard, condition);
-            while condition(&mut *guard) {
-                guard = wait_green(mutex, guard, Duration::from_millis(1));
-            }
-            guard
-        }
-        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
         {
             let _ = mutex;
             condvar
@@ -319,50 +274,20 @@ pub mod sync {
                 if !can_wait() || left.is_zero() {
                     return (guard, true);
                 }
-                #[cfg(target_feature = "atomics")]
-                {
-                    let _ = mutex;
-                    // std's plain timed wait needs no clock.
-                    guard = condvar
-                        .wait_timeout(guard, left)
-                        .unwrap_or_else(|e| e.into_inner())
-                        .0;
-                }
-                #[cfg(not(target_feature = "atomics"))]
-                {
-                    let _ = condvar;
-                    guard = wait_green(mutex, guard, left.min(Duration::from_millis(1)));
-                }
+                let _ = mutex;
+                // std's plain timed wait needs no clock.
+                guard = condvar
+                    .wait_timeout(guard, left)
+                    .unwrap_or_else(|e| e.into_inner())
+                    .0;
             }
             (guard, false)
         }
     }
 
-    /// A green thread's wait: the lock let go, the page and the other green
-    /// threads run a while, then the lock again. Nothing can notify it, so it
-    /// looks again after `dur`.
-    #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-    fn wait_green<'a, T>(
-        mutex: &'a Mutex<T>,
-        guard: MutexGuard<'a, T>,
-        dur: Duration,
-    ) -> MutexGuard<'a, T> {
-        assert!(can_wait(), "the page's thread may not wait");
-        drop(guard);
-        crate::thread::sleep(dur);
-        lock(mutex).unwrap_or_else(|e| e.into_inner())
-    }
-
     #[cfg(target_arch = "wasm32")]
     fn can_wait() -> bool {
-        #[cfg(target_feature = "atomics")]
-        {
-            crate::workers::in_worker()
-        }
-        #[cfg(not(target_feature = "atomics"))]
-        {
-            crate::fibers::in_fiber()
-        }
+        crate::workers::in_worker()
     }
 }
 

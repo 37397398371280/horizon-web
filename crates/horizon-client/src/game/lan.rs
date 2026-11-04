@@ -1264,12 +1264,12 @@ impl Game<'_> {
     /// ShareToLanScreen's "Local game hosted on port %s"; in the browser,
     /// where the world goes to a relay, that the code is coming.
     pub(super) fn lan_started_message(&mut self, port: u16) {
-        #[cfg(all(target_arch = "wasm32", target_feature = "atomics"))]
+        #[cfg(target_arch = "wasm32")]
         {
             let _ = port;
             self.system_message(Text::literal("Sharing the world through a relay..."));
         }
-        #[cfg(not(all(target_arch = "wasm32", target_feature = "atomics")))]
+        #[cfg(not(target_arch = "wasm32"))]
         self.system_message(Text::translate(
             "menu.multiplayerOptions.publish.started.lan",
             &[Text::literal(port.to_string())],
