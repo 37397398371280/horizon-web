@@ -180,6 +180,17 @@ export function horizon_pick_file(kind, accept) {
     };
     input.click();
 }
+export function horizon_function_key_chords() {
+    let asked = null;
+    try {
+        asked = new URLSearchParams(globalThis.location.search).get("fchord");
+    } catch (e) {}
+    if (asked === "on") return true;
+    if (asked === "off") return false;
+    const nav = globalThis.navigator || {};
+    const platform = (nav.userAgentData && nav.userAgentData.platform) || "";
+    return /^chrome ?os$/i.test(platform) || /\bCrOS\b/.test(nav.userAgent || "");
+}
 export function horizon_take_picked() {
     const p = picked;
     picked = null;
@@ -208,6 +219,7 @@ extern "C" {
         name: &str,
     );
     fn horizon_pick_file(kind: &str, accept: &str);
+    fn horizon_function_key_chords() -> bool;
     fn horizon_take_picked() -> JsValue;
     fn horizon_picked_kind() -> Option<String>;
     fn horizon_console(level: u32, message: &str);
@@ -297,6 +309,13 @@ pub fn horizon_start(args: Vec<String>) {
 /// The arguments the page passed to [`horizon_start`].
 pub(crate) fn args() -> Vec<String> {
     ARGS.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
+/// Whether F then a digit should type a function key: on ChromeOS, whose keyboards have no
+/// function row the page can read, and nowhere else, where it would hold F (swap hands) back
+/// until it's released. `?fchord=on` or `off` in the page's address overrides it.
+pub fn function_key_chords() -> bool {
+    horizon_function_key_chords()
 }
 
 /// Hands `bytes` to the browser as a download called `name`.

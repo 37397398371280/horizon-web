@@ -19338,7 +19338,7 @@ impl<'a> Game<'a> {
             },
             keys: Default::default(),
             physical_keys: HashSet::new(),
-            f_chord: f_chord::FChord::default(),
+            f_chord: f_chord::FChord::for_this_device(),
             held_f: None,
             physical_buttons: HashSet::new(),
             drag_button: None,

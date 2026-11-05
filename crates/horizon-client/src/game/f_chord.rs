@@ -1,6 +1,7 @@
 //! F then a digit types a function key (F+3 is F3, F+0 is F10), for keyboards with no
-//! function row the page can read, such as a Chromebook's. The same rule as the Java
-//! build's `DomEventQueue.chord`.
+//! function row the page can read: on ChromeOS only (`FChord::for_this_device`), as the Java
+//! build's `DomEventQueue.chord`. Elsewhere F goes to the game the moment it's pressed, so
+//! swap hands and anything held on F work as they do on the desktop.
 //!
 //! F alone still presses F, but only when it's released or another key goes down, because
 //! nothing can tell a digit is coming. A chord's F is never reported, so it doesn't also act
@@ -30,6 +31,8 @@ pub(super) enum Then {
 
 #[derive(Default)]
 pub(super) struct FChord {
+    /// Every key passes as it came: not ChromeOS (`for_this_device`).
+    off: bool,
     /// F is down and not yet reported: a digit may still turn it into a function key.
     pending: bool,
     /// F is down and a digit already turned it into a function key; its release isn't reported.
@@ -39,9 +42,24 @@ pub(super) struct FChord {
 }
 
 impl FChord {
+    /// On in the browser on ChromeOS (or as `?fchord=` says), off everywhere else.
+    pub fn for_this_device() -> Self {
+        #[cfg(target_arch = "wasm32")]
+        let on = horizon_os::web::function_key_chords();
+        #[cfg(not(target_arch = "wasm32"))]
+        let on = false;
+        Self {
+            off: !on,
+            ..Self::default()
+        }
+    }
+
     /// Forget everything held: focus left, and the game releases its own keys.
     pub fn reset(&mut self) {
-        *self = Self::default();
+        *self = Self {
+            off: self.off,
+            ..Self::default()
+        };
     }
 
     /// `blocked` is Control, Alt or Super held; `typing` is a text box having focus.
@@ -58,6 +76,9 @@ impl FChord {
             flush_f,
             then: Then::Pass,
         };
+        if self.off {
+            return pass(false);
+        }
         if key == KeyCode::KeyF {
             if pressed {
                 if !repeat && !blocked && !typing {
@@ -208,6 +229,26 @@ mod tests {
 
     fn v(flush_f: bool, then: Then) -> Verdict {
         Verdict { flush_f, then }
+    }
+
+    #[test]
+    fn off_passes_f_at_once() {
+        let mut c = FChord {
+            off: true,
+            ..FChord::default()
+        };
+        assert_eq!(press(&mut c, KeyCode::KeyF), v(false, Then::Pass));
+        assert_eq!(press(&mut c, KeyCode::Digit3), v(false, Then::Pass));
+        assert_eq!(release(&mut c, KeyCode::Digit3), v(false, Then::Pass));
+        assert_eq!(release(&mut c, KeyCode::KeyF), v(false, Then::Pass));
+        c.reset();
+        assert_eq!(press(&mut c, KeyCode::KeyF), v(false, Then::Pass));
+    }
+
+    #[test]
+    fn off_on_the_desktop() {
+        let mut c = FChord::for_this_device();
+        assert_eq!(press(&mut c, KeyCode::KeyF), v(false, Then::Pass));
     }
 
     #[test]
