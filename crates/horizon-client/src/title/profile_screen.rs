@@ -107,6 +107,7 @@ pub(super) fn buttons(state: &State, w: f32, h: f32) -> Vec<Button> {
         id,
         icon: None,
         trailing: None,
+        action: None,
     };
     let arms = if state.profile.slim {
         "Arms: Slim"

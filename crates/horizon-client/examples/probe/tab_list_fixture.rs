@@ -172,6 +172,8 @@ pub fn main() -> Result<()> {
                     background,
                     upside_down: &up,
                     decorate: &|_, _| {},
+                    // Vanilla has no Horizon mark.
+                    horizon: &|_| false,
                 };
                 for d in list.layout(&inputs, font) {
                     draws.push(match d {

@@ -200,6 +200,7 @@ impl Title {
                 id,
                 icon: None,
                 trailing: icon,
+                action: None,
             };
         // The Narrator button is inactive without a narrator, and shows
         // `options.narrator.notavailable`.

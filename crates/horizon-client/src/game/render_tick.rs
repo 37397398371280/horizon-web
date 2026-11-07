@@ -142,7 +142,9 @@ impl Game<'_> {
                 .darken_amount(self.clock.fraction() as f32),
             boss_world_fog: self.boss_overlay.should_create_world_fog(),
             spectator: self.spectator(),
-            fire_resistance: self.potions.effects.get("fire_resistance").is_some(),
+            fire_resistance: self.potions.effects.get("fire_resistance").is_some()
+                || self.settings.extras.pvp.tweaks.clear_lava,
+            full_water_vision: self.settings.extras.pvp.tweaks.clear_water,
             night_vision: self.fog_night_vision(),
         };
         let mut fog = horizon_client::fog::setup_fog(tables, &self.fog, &input);
@@ -354,7 +356,8 @@ impl Game<'_> {
         let on_fire = self.camera_type.first_person()
             && !self.spectator()
             && self.player.as_ref().is_some_and(|p| p.fire_ticks > 0);
-        let mut fire_lower = 0.0;
+        // PvP & HUD's lower fire, as a native mod moves it (`native_fire_overlay`).
+        let mut fire_lower = f32::from(self.settings.extras.pvp.tweaks.fire_lower) / 100.0;
         if on_fire {
             self.native_fire_overlay(&mut fire_lower);
         }
@@ -382,8 +385,18 @@ impl Game<'_> {
         let raw = sky.max(i32::from(packed & 15)).clamp(0, 15) as u8;
         lightmap_brightness(if self.dim == Dim::Nether { 0.1 } else { 0.0 }, raw)
     }
+    /// What `Minecraft` ticks outside the level's own tick: `GameRenderer.tick` runs the light
+    /// flicker whenever the game is not paused, frozen or not, while `TextureManager.tick`
+    /// needs the level running normally. `HORIZON_STILL` keeps both with the world.
+    pub(super) fn tick_frame_visuals(&mut self, running: bool) {
+        if running || !self.clock.still() {
+            self.fog.tick_flicker();
+        }
+        if running {
+            self.texture_ticks += 1;
+        }
+    }
     pub(super) fn tick_particles(&mut self) {
-        self.fog.tick_flicker();
         let eye = self.eye_position();
         if let Some(e) = eye {
             let brightness = self.eye_brightness(e);

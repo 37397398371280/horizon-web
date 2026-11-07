@@ -61,8 +61,8 @@ pub struct ScreenInputs<'a> {
     /// Eye in water: (lightmap brightness at the eye, yaw, pitch).
     pub water: Option<(f32, f32, f32)>,
     pub on_fire: bool,
-    /// How far below its place the fire overlay is drawn, in flame
-    /// heights (a native mod's `native_fire_overlay`); 0 is vanilla's.
+    /// How far the fire overlay moves down, in its own heights (PvP & HUD's lower fire, or a
+    /// native mod's `native_fire_overlay`; 0 is vanilla's place).
     pub fire_lower: f32,
     /// `Hud.extractCameraOverlays` draws: the full-screen blits become
     /// screen quads (the spyglass, its fills and the nausea swirl do not).

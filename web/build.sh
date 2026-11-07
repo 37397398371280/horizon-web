@@ -30,6 +30,10 @@ flags=(
     -C target-feature=+atomics,+bulk-memory,+mutable-globals
     -C link-arg=--shared-memory -C link-arg=--import-memory
     -C link-arg=--max-memory=4294967296
+    # The page's own stack (workers get theirs from horizon_os): rustc's 1 MiB
+    # overflowed into the heap when the loading screen's future grew, and the
+    # page died with "memory access out of bounds" before the title screen.
+    -C link-arg=-zstack-size=8388608
     -C link-arg=--export=__wasm_init_tls -C link-arg=--export=__tls_size
     -C link-arg=--export=__tls_align -C link-arg=--export=__tls_base
 )

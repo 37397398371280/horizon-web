@@ -121,6 +121,8 @@ pub enum Screen {
     /// Join a friend's world with its invite code (Horizon's own, behind the
     /// title screen's Friends button).
     Friend {
+        /// The title and server list both open this page; cancellation returns to its parent.
+        from_title: bool,
         code: String,
         /// The relay for short codes (optional; saved on Join).
         relay: String,
@@ -132,6 +134,8 @@ pub enum Screen {
         retry: Option<crate::reconnect::Retry>,
         /// Reconnect and Auto Reconnect, as Incari's client has them.
         rejoin: Rejoin,
+        /// Wrapped reason lines, set by the last draw; the buttons sit below them.
+        lines: std::cell::Cell<usize>,
     },
 }
 /// The Disconnected screen's Reconnect and Auto Reconnect buttons (Incari's
@@ -159,6 +163,17 @@ pub enum Outcome {
     None,
     Back,
     Connect { address: String, lan: bool },
+}
+
+/// The job of [`Screen::buttons`]'s button `id`, for the controller.
+pub fn button_action(id: u8) -> Option<crate::widgets::Action> {
+    use crate::widgets::Action;
+    match id {
+        46 => Some(Action::Back),
+        50 => Some(Action::Done),
+        51 | 53 | 57 | 59 => Some(Action::Cancel),
+        _ => None,
+    }
 }
 
 impl Screen {
@@ -987,10 +1002,17 @@ impl Screen {
                     57,
                 ),
             ],
-            Self::Disconnected { retry, rejoin, .. } => {
+            Self::Disconnected {
+                retry,
+                rejoin,
+                lines,
+                ..
+            } => {
+                let l = rejoin_layout(h, lines.get(), retry.is_some(), rejoin.offered);
+                let btn = l.buttons;
                 let mut v = vec![b(
                     half(w) - 100.0,
-                    half(h) + 30.0,
+                    btn,
                     200.0,
                     &crate::lang::get_or("gui.toMenu", "Back to Server List"),
                     true,
@@ -999,7 +1021,7 @@ impl Screen {
                 if rejoin.offered {
                     v.push(b(
                         half(w) - 100.0,
-                        half(h) + 54.0,
+                        btn + 24.0,
                         200.0,
                         &crate::lang::get_or("horizon.multiplayer.reconnect", "Reconnect"),
                         true,
@@ -1007,7 +1029,7 @@ impl Screen {
                     ));
                     v.push(b(
                         half(w) - 100.0,
-                        half(h) + 78.0,
+                        btn + 48.0,
                         200.0,
                         &auto_reconnect_label(rejoin.auto, retry.as_ref()),
                         true,
@@ -1016,7 +1038,7 @@ impl Screen {
                 } else if retry.is_some() {
                     v.push(b(
                         half(w) - 100.0,
-                        half(h) + 54.0,
+                        btn + 24.0,
                         200.0,
                         &crate::lang::get_or(
                             "horizon.multiplayer.cancel_reconnecting",
@@ -1161,6 +1183,14 @@ impl Screen {
                     let names: Vec<String> = player_list.iter().map(Text::plain).collect();
                     parts.push(names.join(", "));
                 }
+            }
+            Some(Ping::Incompatible { motd, version, .. }) => {
+                parts.push(t("multiplayer.status.incompatible", &[]));
+                parts.push(t(
+                    "multiplayer.status.version.narration",
+                    &[&version.plain()],
+                ));
+                parts.push(t("multiplayer.status.motd.narration", &[&motd.plain()]));
             }
             Some(Ping::Failed(_)) => parts.push(t("multiplayer.status.no_connection", &[])),
             _ => parts.push(t("multiplayer.status.pinging", &[])),
@@ -1557,7 +1587,9 @@ impl Screen {
                     centered(batch, &line.plain(), top + 17.0 + i as f32 * 9.0, u32::MAX);
                 }
             }
-            Self::Friend { code, relay, focus } => {
+            Self::Friend {
+                code, relay, focus, ..
+            } => {
                 // The browser joins Eaglercraft's way: a shared world's code
                 // on a relay.
                 let (heading, label) = if cfg!(target_arch = "wasm32") {
@@ -1598,20 +1630,25 @@ impl Screen {
                 reason,
                 retry,
                 rejoin,
+                lines,
             } => {
+                // DisconnectedScreen: the reason wraps to width - 50.
+                let wrapped = wrap(reason, (w.ceil() - 50.0).max(1.0), atlas);
+                lines.set(wrapped.len());
+                let l = rejoin_layout(h, wrapped.len(), retry.is_some(), rejoin.offered);
                 centered(
                     batch,
                     &crate::lang::get_or("disconnect.lost", "Connection Lost"),
-                    half(h) - 40.0,
+                    l.title,
                     rgba(170, 170, 170, 255),
                 );
-                for (i, line) in wrap(reason, 300.0, atlas).iter().enumerate() {
-                    centered(batch, line, half(h) - 16.0 + i as f32 * 9.0, u32::MAX);
+                for (i, line) in wrapped.iter().enumerate() {
+                    centered(batch, line, l.message + i as f32 * 9.0, u32::MAX);
                 }
                 // With Auto Reconnect's button, its label counts down instead.
                 if let Some(r) = retry.as_ref().filter(|_| !rejoin.offered) {
                     let text = r.text(horizon_os::time::Instant::now());
-                    centered(batch, &text, half(h) + 16.0, rgba(170, 170, 170, 255));
+                    centered(batch, &text, l.retry, rgba(170, 170, 170, 255));
                 }
             }
         }
@@ -1669,7 +1706,7 @@ impl Screen {
                     address: String::new(),
                 }
             }
-            (Self::List { .. }, Some(47)) => *self = Self::friend(),
+            (Self::List { .. }, Some(47)) => *self = Self::friend(false),
             (Self::List { .. }, Some(42)) => {
                 *self = Self::Edit {
                     index: None,
@@ -1845,6 +1882,12 @@ impl Screen {
                 let _ = servers::save(&servers_file(saves), &list);
                 *self = Self::list(saves);
             }
+            (
+                Self::Friend {
+                    from_title: true, ..
+                },
+                Some(57),
+            ) => return Outcome::Back,
             (
                 Self::Edit { .. }
                 | Self::Direct { .. }
@@ -2039,7 +2082,7 @@ impl Screen {
         }
     }
     /// Join a friend, with the relay the player set before.
-    pub fn friend() -> Self {
+    pub fn friend(from_title: bool) -> Self {
         // The browser's relays are the shared worlds' ones.
         let relay = if cfg!(target_arch = "wasm32") {
             horizon_os::env::current_dir()
@@ -2049,6 +2092,7 @@ impl Screen {
             crate::net::friends_relay_setting()
         };
         Self::Friend {
+            from_title,
             code: String::new(),
             relay: relay.unwrap_or_default(),
             focus: 0,
@@ -2160,7 +2204,10 @@ impl Screen {
     /// Escape: back to the list, or out of it (true).
     pub fn escape(&mut self, saves: &Path) -> bool {
         match self {
-            Self::List { .. } => true,
+            Self::List { .. }
+            | Self::Friend {
+                from_title: true, ..
+            } => true,
             // ConfirmScreen.keyPressed: Escape answers no.
             Self::ConfirmDelete { list, .. } => {
                 let list = std::mem::replace(
@@ -2213,6 +2260,45 @@ fn direct_address(address: &str) -> String {
         address.trim().to_owned()
     }
 }
+/// Y positions on the disconnect screen.
+struct DisconnectedLayout {
+    title: f32,
+    message: f32,
+    retry: f32,
+    buttons: f32,
+}
+/// `DisconnectedScreen.init`: a vertical layout centred on the screen. The
+/// title and message cells pad 10 on each side, the buttons 2; the message
+/// is `lines` rows of 9, so the buttons always sit below it.
+fn disconnected_layout(h: f32, lines: usize, retry: bool) -> DisconnectedLayout {
+    let message_h = lines as f32 * 9.0 + 20.0;
+    let retry_h = if retry { 13.0 } else { 0.0 };
+    let buttons = if retry { 48.0 } else { 24.0 };
+    let top = half(h - (29.0 + message_h + retry_h + buttons));
+    DisconnectedLayout {
+        title: top + 10.0,
+        message: top + 39.0,
+        retry: top + 29.0 + message_h + 2.0,
+        buttons: top + 29.0 + message_h + retry_h + 2.0,
+    }
+}
+
+/// `disconnected_layout`, with Reconnect and Auto Reconnect under Back to
+/// Server List when `offered`: three buttons and no countdown line (Auto
+/// Reconnect's label counts down), the block kept centred.
+fn rejoin_layout(h: f32, lines: usize, retry: bool, offered: bool) -> DisconnectedLayout {
+    if !offered {
+        return disconnected_layout(h, lines, retry);
+    }
+    let l = disconnected_layout(h, lines, false);
+    DisconnectedLayout {
+        title: l.title - 24.0,
+        message: l.message - 24.0,
+        retry: l.retry - 24.0,
+        buttons: l.buttons - 24.0,
+    }
+}
+
 /// Greedy word wrap to a pixel width.
 pub fn wrap(text: &str, width: f32, atlas: &HudAtlas) -> Vec<String> {
     let mut lines = Vec::new();
@@ -2251,6 +2337,57 @@ mod tests {
             servers_file_of(Some(Path::new("/games/players/alex")), saves),
             Path::new("/games/players/alex/servers.dat")
         );
+    }
+
+    #[test]
+    fn incompatible_server_narration_matches_vanilla_order() {
+        struct Vanilla;
+        impl crate::lang::ResourceSource for Vanilla {
+            fn read(&self, path: &str) -> Option<Vec<u8>> {
+                (path == "assets/minecraft/lang/en_us.json").then(|| {
+                    br#"{
+                        "narrator.select": "Select %s",
+                        "multiplayer.status.incompatible": "Incompatible version",
+                        "multiplayer.status.version.narration": "Version %s",
+                        "multiplayer.status.motd.narration": "MOTD %s"
+                    }"#
+                    .to_vec()
+                })
+            }
+            fn namespaces(&self) -> Vec<String> {
+                vec!["minecraft".into()]
+            }
+        }
+
+        crate::lang::scoped(crate::lang::Language::load(&[&Vanilla], "en_us"), || {
+            let entry = ServerEntry::new("Vanilla Legacy", "127.0.0.1:25565");
+            let ping = Ping::Incompatible {
+                motd: Text::literal("A Server"),
+                players: None,
+                player_list: Vec::new(),
+                version: Text::literal("1.12.2"),
+            };
+            let narration = Screen::server_narration(&entry, Some(&ping));
+            assert!(narration.contains("Vanilla Legacy"));
+            assert!(narration.contains("1.12.2"));
+            assert!(narration.contains("A Server"));
+            assert!(narration.contains("Incompatible version"));
+            // Vanilla: name -> incompatible -> version -> motd
+            let select = crate::screen_narrator::translate("narrator.select", &["Vanilla Legacy"]);
+            let incomp = crate::screen_narrator::translate("multiplayer.status.incompatible", &[]);
+            let version = crate::screen_narrator::translate(
+                "multiplayer.status.version.narration",
+                &["1.12.2"],
+            );
+            let motd = crate::screen_narrator::translate(
+                "multiplayer.status.motd.narration",
+                &["A Server"],
+            );
+            assert_eq!(
+                narration,
+                crate::widgets::join_for_narration(&[&select, &incomp, &version, &motd])
+            );
+        });
     }
 
     #[test]
@@ -2379,6 +2516,7 @@ mod tests {
         assert_eq!(at(&direct, 427.0, 334.0), [(113.0, 191.0), (113.0, 215.0)]);
         assert_eq!(at(&direct, 320.0, 240.0), [(60.0, 168.0), (60.0, 192.0)]);
         let friend = Screen::Friend {
+            from_title: false,
             code: String::new(),
             relay: String::new(),
             focus: 0,
@@ -2388,15 +2526,22 @@ mod tests {
             reason: String::new(),
             retry: None,
             rejoin: Rejoin::default(),
+            lines: std::cell::Cell::new(1),
         };
-        assert_eq!(at(&lost, 427.0, 253.0), [(113.0, 156.0)]);
+        assert_eq!(at(&lost, 427.0, 253.0), [(113.0, 145.0)]);
+        // Reconnect and Auto Reconnect: two more rows, the block still centred.
         if let Screen::Disconnected { rejoin, .. } = &mut lost {
             rejoin.offered = true;
         }
         assert_eq!(
             at(&lost, 427.0, 253.0),
-            [(113.0, 156.0), (113.0, 180.0), (113.0, 204.0)]
+            [(113.0, 121.0), (113.0, 145.0), (113.0, 169.0)]
         );
+        // Taller messages push the button down instead of under the text.
+        let l1 = disconnected_layout(253.0, 1, false);
+        let l6 = disconnected_layout(253.0, 6, false);
+        assert!(l6.buttons >= l6.message + 6.0 * 9.0);
+        assert!(l1.buttons >= l1.message + 9.0);
         // centeredText: `width / 2 - font.width(text) / 2`.
         assert_eq!(centered_x(427.0, 85.0), 171.0);
         assert_eq!(centered_x(320.0, 84.0), 118.0);
