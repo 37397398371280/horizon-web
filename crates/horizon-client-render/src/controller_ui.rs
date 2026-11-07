@@ -657,7 +657,7 @@ impl ControllerUi {
             let rect = [x + 2.0, y + 2.0 + i as f32 * 10.0, w - 4.0, 8.0];
             crate::widgets::record(line, rect, false);
             let line = Text::literal(style::fit(atlas, line, w - 4.0));
-            batch.text_styled(atlas, &line, rect[0], rect[1], style::MUTED, true);
+            batch.text_styled(atlas, &line, rect[0], rect[1], style::muted(), true);
         }
     }
     /// A binding's row: its name, its button, and a reset once it isn't the default.
@@ -683,7 +683,7 @@ impl ControllerUi {
         let value = value.unwrap_or_default();
         if hover || focused {
             let lit = [rect[0] + 2.0, y + 1.0, rect[2] - 4.0, style::ROW - 2.0];
-            style::fill(batch, atlas, lit, style::HOVER);
+            style::lit(batch, atlas, lit);
         }
         let label = format!("{name}: {value}");
         crate::widgets::widget_cursor(hover, true);
@@ -717,9 +717,9 @@ impl ControllerUi {
         };
         style::button(batch, atlas, chip, &shown, (hover, true, false));
         let shown = Text::literal(style::fit(atlas, &name, chip[0] - 6.0 - left));
-        batch.text_styled(atlas, &shown, left, ty, style::WHITE, true);
+        batch.text_styled(atlas, &shown, left, ty, style::white(), true);
         if focused {
-            style::ring(batch, atlas, rect, style::WHITE);
+            style::focus(batch, atlas, rect);
         }
         // Reset: a target only where it would do something.
         let live = !s.controller.is_default(action);
@@ -743,7 +743,7 @@ impl ControllerUi {
         let shown = Text::literal(reset_label);
         style::button(batch, atlas, reset, &shown, (reset_hover, live, false));
         if reset_focused {
-            style::ring(batch, atlas, reset, style::WHITE);
+            style::focus(batch, atlas, reset);
         }
     }
     /// A line to read: focusable, so the narrator and a controller reach it, and it does nothing.
@@ -772,23 +772,18 @@ impl ControllerUi {
         crate::widgets::target(rect);
         if hover || focused {
             let lit = [rect[0] + 2.0, y + 1.0, rect[2] - 4.0, style::ROW - 2.0];
-            style::fill(batch, atlas, lit, style::HOVER);
+            style::lit(batch, atlas, lit);
         }
         let ty = y + ((style::ROW - 8.0) / 2.0).floor();
         let left = rect[0] + style::INSET;
         let name_w = atlas.font.width(&name);
-        batch.text_styled(atlas, &Text::literal(name), left, ty, style::WHITE, true);
+        batch.text_styled(atlas, &Text::literal(name), left, ty, style::white(), true);
         let room = rect[2] - 2.0 * style::INSET - name_w - 8.0;
         let value = style::fit(atlas, &value, room);
         let vx = rect[0] + rect[2] - style::INSET - atlas.font.width(&value);
-        batch.text_styled(atlas, &Text::literal(value), vx, ty, style::SOFT, true);
+        batch.text_styled(atlas, &Text::literal(value), vx, ty, style::soft(), true);
         if focused {
-            style::ring(
-                batch,
-                atlas,
-                [rect[0] + 1.0, y, rect[2] - 2.0, style::ROW],
-                style::WHITE,
-            );
+            style::focus(batch, atlas, [rect[0] + 1.0, y, rect[2] - 2.0, style::ROW]);
         }
     }
     /// The strip under the plate: the hovered or focused setting's name, then what it does; with
@@ -812,8 +807,8 @@ impl ControllerUi {
             }
         };
         let name = Text::literal(name);
-        batch.text_styled(atlas, &name, x + 12.0, y + 8.0, style::WHITE, true);
-        shell::dock_note(batch, atlas, cols, text, style::GREY);
+        batch.text_styled(atlas, &name, x + 12.0, y + 8.0, style::white(), true);
+        shell::dock_note(batch, atlas, cols, text, style::grey());
     }
     /// What a row does. A binding names the controller's own buttons, and what else its button
     /// does when it shares it.

@@ -1681,20 +1681,20 @@ impl GraphicsUi {
                 let line = Text::literal(line).with_color(setting.cost.rgb());
                 let square = [left, y + 10.0, 4.0, 4.0];
                 style::fill(batch, atlas, square, style::cost_color(setting.cost));
-                batch.text_styled(atlas, &line, left + 8.0, y + 8.0, style::WHITE, true);
+                batch.text_styled(atlas, &line, left + 8.0, y + 8.0, style::white(), true);
                 match setting.item.blocked(s) {
-                    Some(why) => (lang::get(why), style::MUTED),
+                    Some(why) => (lang::get(why), style::muted()),
                     None => (
                         lang::get(description(setting.item, s, setting.text)),
-                        style::GREY,
+                        style::grey(),
                     ),
                 }
             }
             None => {
                 let Some(page) = current else { return };
                 let name = Text::literal(lang::get(page.name()));
-                batch.text_styled(atlas, &name, left, y + 8.0, style::WHITE, true);
-                (lang::get(page.about()), style::GREY)
+                batch.text_styled(atlas, &name, left, y + 8.0, style::white(), true);
+                (lang::get(page.about()), style::grey())
             }
         };
         shell::dock_note(batch, atlas, cols, text, color);

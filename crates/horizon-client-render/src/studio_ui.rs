@@ -235,7 +235,7 @@ impl StudioUi {
 
         // Subtitle strip: centered info text
         let subtitle = Text::tr("horizon.studio.saved_recordings", &[]);
-        ui::centered_text(batch, atlas, &subtitle, 0.0, 26.0, w, style::GREY);
+        ui::centered_text(batch, atlas, &subtitle, 0.0, 26.0, w, style::grey());
 
         // Main content area layout
         let panel_w = (w - 40.0).clamp(280.0, 440.0);
@@ -257,7 +257,7 @@ impl StudioUi {
                 panel_x,
                 panel_y + panel_h / 2.0 - 16.0,
                 panel_w,
-                style::WHITE,
+                style::white(),
             );
             ui::centered_text(
                 batch,
@@ -266,7 +266,7 @@ impl StudioUi {
                 panel_x,
                 panel_y + panel_h / 2.0,
                 panel_w,
-                style::GREY,
+                style::grey(),
             );
         } else {
             // Render scrollable cards
@@ -294,21 +294,15 @@ impl StudioUi {
 
                 // Card background & highlight
                 if is_selected {
-                    style::fill(batch, atlas, rect, style::OPEN);
+                    style::open(batch, atlas, rect, false);
+                    style::ring(batch, atlas, rect, style::accent());
                 } else if is_hovered {
-                    style::fill(batch, atlas, rect, style::HOVER);
+                    style::lit(batch, atlas, rect);
+                    style::focus(batch, atlas, rect);
                 } else {
                     style::well(batch, atlas, rect);
+                    style::ring(batch, atlas, rect, style::ROW_RULE);
                 }
-
-                let border_color = if is_selected {
-                    style::ACCENT
-                } else if is_hovered {
-                    style::WHITE
-                } else {
-                    style::ROW_RULE
-                };
-                style::ring(batch, atlas, rect, border_color);
 
                 // Card Line 1: Recording Title (bold white)
                 let title_text = Text::literal(&item.title);
@@ -317,7 +311,7 @@ impl StudioUi {
                     &title_text,
                     card_x + 8.0,
                     y + 6.0,
-                    style::WHITE,
+                    style::white(),
                     true,
                 );
 
@@ -329,7 +323,14 @@ impl StudioUi {
                     item.server_name
                 );
                 let meta_text = Text::literal(&meta_str);
-                batch.text_styled(atlas, &meta_text, card_x + 8.0, y + 20.0, style::GREY, true);
+                batch.text_styled(
+                    atlas,
+                    &meta_text,
+                    card_x + 8.0,
+                    y + 20.0,
+                    style::grey(),
+                    true,
+                );
 
                 y += row_step;
             }

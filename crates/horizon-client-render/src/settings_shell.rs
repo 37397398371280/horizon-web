@@ -185,17 +185,15 @@ impl<P: Copy, S: Copy> Lines<P, S> {
 pub(crate) fn backdrop(batch: &mut HudBatch, atlas: &HudAtlas, in_world: bool) {
     let (w, h) = (batch.width, batch.height);
     ui::menu_background(batch, atlas, 0.0, 0.0, w, h, in_world);
-    style::fill(batch, atlas, [0.0, 0.0, w, h], style::VEIL);
+    style::veil(batch, atlas, [0.0, 0.0, w, h]);
 }
 
 /// The mark and the screen's name over the search field.
 pub(crate) fn mark(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, title: &str) {
     let (x, y) = (cols.side_x, cols.side_y);
-    style::fill(batch, atlas, [x, y + 2.0, 6.0, 6.0], style::ACCENT);
-    let horizon = Text::literal("Horizon");
-    batch.text_styled(atlas, &horizon, x + 10.0, y, style::WHITE, true);
+    style::mark(batch, atlas, [x, y, style::CONTROL_W, 9.0]);
     let title = Text::literal(title);
-    batch.text_styled(atlas, &title, x, y + 10.0, style::MUTED, true);
+    batch.text_styled(atlas, &title, x, y + 10.0, style::muted(), true);
 }
 
 /// A page in the page list: the open page on a plate with the accent's bar beside it, the
@@ -221,19 +219,18 @@ pub(crate) fn page_tab(
         crate::widgets::target_as(rect, crate::widgets::Kind::Tab(open));
     }
     if open {
-        style::fill(batch, atlas, rect, style::OPEN);
-        style::fill(batch, atlas, [px, py, 2.0, ph], style::ACCENT);
+        style::open(batch, atlas, rect, true);
     }
     let color = match (open || hover, has) {
-        (true, _) => style::WHITE,
-        (false, true) => style::SOFT,
-        (false, false) => style::MUTED,
+        (true, _) => style::white(),
+        (false, true) => style::soft(),
+        (false, false) => style::muted(),
     };
     let ty = py + ((ph - 8.0) / 2.0).floor();
     let name = Text::literal(style::fit(atlas, name, pw - 12.0));
     batch.text_styled(atlas, &name, px + 8.0, ty, color, true);
     if focused {
-        style::ring(batch, atlas, rect, style::WHITE);
+        style::focus(batch, atlas, rect);
     }
 }
 
@@ -253,19 +250,23 @@ pub(crate) fn search_field(
     let clear = cols.clear();
     (search.x, search.y) = (x + 5.0, y + ((h - 8.0) / 2.0).floor());
     search.width = clear[0] - search.x;
-    search.text_color = style::WHITE;
+    search.text_color = style::white();
     // The clear button isn't the field's: a click at the field's end must not press it.
     let frame = [x, y, clear[0] - x, h];
     search.frame = Some(frame);
     search.draw(batch, atlas, None);
     if search.value.is_empty() && !focused {
         let hint = Text::literal(search.message.clone());
-        batch.text_styled(atlas, &hint, x + 5.0, search.y, style::MUTED, true);
+        batch.text_styled(atlas, &hint, x + 5.0, search.y, style::muted(), true);
     }
     if !search.value.is_empty() {
         let hover = ui::hovered(cursor, clear[0], clear[1], clear[2], clear[3]);
         crate::widgets::widget_cursor(hover, true);
-        let color = if hover { style::WHITE } else { style::MUTED };
+        let color = if hover {
+            style::white()
+        } else {
+            style::muted()
+        };
         let cy = y + ((h - 8.0) / 2.0).floor();
         ui::centered_text(
             batch,
@@ -278,7 +279,7 @@ pub(crate) fn search_field(
         );
     }
     if focused {
-        style::ring(batch, atlas, frame, style::WHITE);
+        style::focus(batch, atlas, frame);
     }
 }
 
@@ -287,13 +288,8 @@ pub(crate) fn plate(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, head
     let [px, py, pw, _] = cols.plate;
     style::panel(batch, atlas, cols.plate);
     let heading = Text::literal(style::fit(atlas, heading, pw - 24.0));
-    batch.text_styled(atlas, &heading, px + 12.0, py + 10.0, style::WHITE, true);
-    style::fill(
-        batch,
-        atlas,
-        [px + 8.0, py + 24.0, pw - 16.0, 1.0],
-        style::HEAD_RULE,
-    );
+    batch.text_styled(atlas, &heading, px + 12.0, py + 10.0, style::white(), true);
+    style::rule(batch, atlas, [px + 8.0, py + 24.0, pw - 16.0, 1.0], true);
 }
 
 /// The list, clipped to its view: each group's panel, then its names and rows on it. `row`
@@ -331,9 +327,9 @@ pub(crate) fn list<P: Copy, S: Copy>(
         }
         let Some(setting) = line.setting else {
             let (name, color, dy) = match line.group {
-                Some(("", _)) => (page_name(line.page), style::MUTED, 3.0),
-                Some((name, _)) => (lang::get(name), style::MUTED, 3.0),
-                None => (page_name(line.page), style::ACCENT, 4.0),
+                Some(("", _)) => (page_name(line.page), style::muted(), 3.0),
+                Some((name, _)) => (lang::get(name), style::muted(), 3.0),
+                None => (page_name(line.page), style::accent(), 4.0),
             };
             let name = Text::literal(name);
             batch.text_styled(atlas, &name, cols.list_x + 2.0, y + dy, color, true);
@@ -341,7 +337,7 @@ pub(crate) fn list<P: Copy, S: Copy>(
         };
         if !after_name {
             let rule = [cols.list_x + 8.0, y, cols.list_w - 16.0, 1.0];
-            style::fill(batch, atlas, rule, style::ROW_RULE);
+            style::rule(batch, atlas, rule, false);
         }
         row(batch, setting, y);
     }
@@ -352,7 +348,7 @@ pub(crate) fn list<P: Copy, S: Copy>(
             &none,
             cols.list_x + 2.0,
             cols.top + 4.0,
-            style::MUTED,
+            style::muted(),
             true,
         );
     }
@@ -443,7 +439,7 @@ pub(crate) fn row(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, y: f32
     let active = live && (hover || focused || held);
     if active {
         let lit = [rect[0] + 2.0, y + 1.0, rect[2] - 4.0, style::ROW - 2.0];
-        style::fill(batch, atlas, lit, style::HOVER);
+        style::lit(batch, atlas, lit);
     }
     crate::widgets::widget_cursor(hover, live);
     // The control socket's widget tree, the narrator and a controller's focus.
@@ -467,8 +463,8 @@ pub(crate) fn row(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, y: f32
     if live {
         crate::widgets::target_as(rect, kind);
     }
-    let color = if live { style::WHITE } else { style::MUTED };
-    let soft = if live { style::SOFT } else { style::MUTED };
+    let color = if live { style::white() } else { style::muted() };
+    let soft = if live { style::soft() } else { style::muted() };
     let ty = y + ((style::ROW - 8.0) / 2.0).floor();
     let lit = live && (hover || held);
     let left = rect[0] + style::INSET;
@@ -513,12 +509,7 @@ pub(crate) fn row(batch: &mut HudBatch, atlas: &HudAtlas, cols: &Columns, y: f32
         batch.text_styled(atlas, &shown, left, ty, color, true);
     }
     if focused {
-        style::ring(
-            batch,
-            atlas,
-            [rect[0] + 1.0, y, rect[2] - 2.0, style::ROW],
-            style::WHITE,
-        );
+        style::focus(batch, atlas, [rect[0] + 1.0, y, rect[2] - 2.0, style::ROW]);
     }
 }
 

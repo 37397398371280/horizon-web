@@ -55,11 +55,11 @@ const EDGE: u32 = hex(B.ink, 26);
 /// A group's panel, a little lighter than the plate it sits on.
 const GROUP: u32 = hex(B.ink, 11);
 /// A hovered or focused row, lit on its group's panel.
-pub const HOVER: u32 = hex(B.ink, 18);
+const HOVER: u32 = hex(B.ink, 18);
 /// The open page in the page list.
-pub const OPEN: u32 = hex(B.ink, 26);
+const OPEN: u32 = hex(B.ink, 26);
 /// The rule under the plate's heading, and between two rows of a group.
-pub const HEAD_RULE: u32 = hex(B.ink, 31);
+const HEAD_RULE: u32 = hex(B.ink, 31);
 pub const ROW_RULE: u32 = hex(B.ink, 15);
 /// Fields, boxes and the value stepper: sunk, see-through.
 const WELL: u32 = hex(B.outline, 102);
@@ -74,16 +74,69 @@ const FACE_HOVER: u32 = hex(0x6a50e6, 255);
 /// A tick box's edge when off.
 const BOX_EDGE: u32 = hex(B.ink_soft, 89);
 const OUTLINE: u32 = hex(B.outline, 255);
-pub const ACCENT: u32 = hex(B.accent, 255);
-/// Vanilla's white text, and its grey for what can't be used now.
-pub const WHITE: u32 = u32::MAX;
-pub const MUTED: u32 = hex(B.muted, 255);
-/// A page that isn't open, a value at rest.
-pub const SOFT: u32 = hex(B.ink_soft, 255);
-/// Vanilla's grey for a tooltip's lines under its first (`ChatFormatting.GRAY`).
-pub const GREY: u32 = hex(0xaaaaaa, 255);
 /// A light veil over the backdrop, under the panels.
-pub const VEIL: u32 = hex(B.page, 77);
+const VEIL: u32 = hex(B.page, 77);
+
+/// A client's colours for these screens' text and accents (`set_palette`), each `0xAARRGGBB`.
+/// Its shapes come from the GUI skin (`hud::set_skin`), asked for by `horizon/settings/` names.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Palette {
+    /// Names and values that can be used now.
+    pub text: u32,
+    /// A value at rest, a page that isn't open.
+    pub soft: u32,
+    /// What can't be used now, group names, hints.
+    pub muted: u32,
+    /// Ticks, slider fills, the open page's bar, a page's name while searching.
+    pub accent: u32,
+    /// A setting's description in the strip.
+    pub note: u32,
+    /// The costs: low (or saving time), medium and high.
+    pub positive: u32,
+    pub warning: u32,
+    pub negative: u32,
+}
+
+thread_local! {
+    static PALETTE: std::cell::Cell<Option<Palette>> = const { std::cell::Cell::new(None) };
+}
+
+/// Installs a client's palette for this thread's GUI (none gives Horizon's back).
+pub fn set_palette(palette: Option<Palette>) {
+    PALETTE.with(|p| p.set(palette));
+}
+
+/// `0xAARRGGBB` in the HUD's colour encoding.
+const fn argb(c: u32) -> u32 {
+    c & 0xff00_ff00 | (c & 0xff) << 16 | (c >> 16 & 0xff)
+}
+fn pick(own: u32, theirs: impl Fn(&Palette) -> u32) -> u32 {
+    PALETTE.with(|p| p.get()).map_or(own, |p| argb(theirs(&p)))
+}
+/// Vanilla's white text.
+pub fn white() -> u32 {
+    pick(u32::MAX, |p| p.text)
+}
+/// Vanilla's grey for what can't be used now.
+pub fn muted() -> u32 {
+    pick(hex(B.muted, 255), |p| p.muted)
+}
+/// A page that isn't open, a value at rest.
+pub fn soft() -> u32 {
+    pick(hex(B.ink_soft, 255), |p| p.soft)
+}
+pub fn accent() -> u32 {
+    pick(hex(B.accent, 255), |p| p.accent)
+}
+/// Vanilla's grey for a tooltip's lines under its first (`ChatFormatting.GRAY`).
+pub fn grey() -> u32 {
+    pick(hex(0xaaaaaa, 255), |p| p.note)
+}
+
+/// Whether the GUI skin drew part `name` (`horizon/settings/<part>`) over `rect`.
+fn skinned(batch: &mut HudBatch, atlas: &HudAtlas, name: &str, rect: [f32; 4]) -> bool {
+    crate::hud::skinned(batch, atlas, name, rect, u32::MAX)
+}
 
 /// Sizes in GUI pixels.
 /// Shorter screens than this (a 720p window at scale 3) keep a narrower margin on top.
@@ -111,30 +164,93 @@ pub const INSET: f32 = 10.0;
 pub fn fill(batch: &mut HudBatch, atlas: &HudAtlas, [x, y, w, h]: [f32; 4], color: u32) {
     batch.fill(atlas, x, y, w, h, color);
 }
-/// A 1 px ring inside `rect`: the keyboard or controller focus, in white as vanilla draws it.
+/// A 1 px ring inside `rect`.
 pub fn ring(batch: &mut HudBatch, atlas: &HudAtlas, [x, y, w, h]: [f32; 4], color: u32) {
     batch.fill(atlas, x, y, w, 1.0, color);
     batch.fill(atlas, x, y + h - 1.0, w, 1.0, color);
     batch.fill(atlas, x, y + 1.0, 1.0, h - 2.0, color);
     batch.fill(atlas, x + w - 1.0, y + 1.0, 1.0, h - 2.0, color);
 }
+/// The keyboard or controller focus around `rect`, in white as vanilla draws it.
+pub fn focus(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
+    if !skinned(batch, atlas, "horizon/settings/focus", rect) {
+        ring(batch, atlas, rect, white());
+    }
+}
+/// A light veil over the whole screen's backdrop, under the panels.
+pub fn veil(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
+    if !skinned(batch, atlas, "horizon/settings/veil", rect) {
+        fill(batch, atlas, rect, VEIL);
+    }
+}
 /// The screen's plate, and the strip under it: dark glass with a thin edge.
 pub fn panel(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
-    fill(batch, atlas, rect, GLASS);
-    ring(batch, atlas, rect, EDGE);
+    if !skinned(batch, atlas, "horizon/settings/panel", rect) {
+        fill(batch, atlas, rect, GLASS);
+        ring(batch, atlas, rect, EDGE);
+    }
 }
 /// A group's panel on the plate, its rows on it.
 pub fn group(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
-    fill(batch, atlas, rect, GROUP);
+    if !skinned(batch, atlas, "horizon/settings/group", rect) {
+        fill(batch, atlas, rect, GROUP);
+    }
 }
 /// A sunk well: the search field, the value stepper.
 pub fn well(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
-    fill(batch, atlas, rect, WELL);
+    if !skinned(batch, atlas, "horizon/settings/well", rect) {
+        fill(batch, atlas, rect, WELL);
+    }
+}
+/// A hovered or focused row, lit on its group's panel.
+pub fn lit(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
+    if !skinned(batch, atlas, "horizon/settings/row_lit", rect) {
+        fill(batch, atlas, rect, HOVER);
+    }
+}
+/// The open page in the page list (or the chosen card): a plate, with the accent's bar beside
+/// it when `bar`.
+pub fn open(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4], bar: bool) {
+    let name = if bar {
+        "horizon/settings/tab_open"
+    } else {
+        "horizon/settings/card_open"
+    };
+    if !skinned(batch, atlas, name, rect) {
+        fill(batch, atlas, rect, OPEN);
+        if bar {
+            fill(batch, atlas, [rect[0], rect[1], 2.0, rect[3]], accent());
+        }
+    }
+}
+/// The rule under the plate's heading (`head`), or between two rows of a group.
+pub fn rule(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4], head: bool) {
+    let (name, color) = if head {
+        ("horizon/settings/rule_head", HEAD_RULE)
+    } else {
+        ("horizon/settings/rule", ROW_RULE)
+    };
+    if !skinned(batch, atlas, name, rect) {
+        fill(batch, atlas, rect, color);
+    }
 }
 /// The scroller: a faint track and its thumb.
 pub fn scroller(batch: &mut HudBatch, atlas: &HudAtlas, track: [f32; 4], thumb: [f32; 4]) {
-    fill(batch, atlas, track, ROW_RULE);
-    fill(batch, atlas, thumb, TRACK);
+    if !skinned(batch, atlas, "horizon/settings/scroller", track) {
+        fill(batch, atlas, track, ROW_RULE);
+    }
+    if !skinned(batch, atlas, "horizon/settings/scroller_thumb", thumb) {
+        fill(batch, atlas, thumb, TRACK);
+    }
+}
+/// The mark beside the client's name, over the screen's: `rect` is the name's line.
+pub fn mark(batch: &mut HudBatch, atlas: &HudAtlas, rect: [f32; 4]) {
+    if !skinned(batch, atlas, "horizon/settings/mark", rect) {
+        let [x, y, _, _] = rect;
+        fill(batch, atlas, [x, y + 2.0, 6.0, 6.0], accent());
+        let horizon = Text::literal("Horizon");
+        batch.text_styled(atlas, &horizon, x + 10.0, y, white(), true);
+    }
 }
 /// `text` cut to `width` with an ellipsis, as a long name gives way to its control.
 pub fn fit(atlas: &HudAtlas, text: &str, width: f32) -> String {
@@ -153,10 +269,19 @@ pub fn fit(atlas: &HudAtlas, text: &str, width: f32) -> String {
 /// A 12 px tick box ending at `right`, centred in the row at `y`: its edge in the accent when on.
 pub fn checkbox(batch: &mut HudBatch, atlas: &HudAtlas, right: f32, y: f32, on: bool, live: bool) {
     let rect = [right - 12.0, y + 4.0, 12.0, 12.0];
+    let name = match (on, live) {
+        (false, true) => "horizon/settings/checkbox",
+        (true, true) => "horizon/settings/checkbox_selected",
+        (false, false) => "horizon/settings/checkbox_disabled",
+        (true, false) => "horizon/settings/checkbox_selected_disabled",
+    };
+    if skinned(batch, atlas, name, rect) {
+        return;
+    }
     fill(batch, atlas, rect, WELL);
     let edge = match (on, live) {
-        (true, true) => ACCENT,
-        (true, false) => MUTED,
+        (true, true) => accent(),
+        (true, false) => muted(),
         (false, _) => BOX_EDGE,
     };
     ring(batch, atlas, rect, edge);
@@ -196,18 +321,27 @@ pub fn button(
     (hover, live, primary): (bool, bool, bool),
 ) {
     let [x, y, w, h] = rect;
-    let face = match (live, primary, hover) {
-        (false, _, _) => WELL,
-        (true, true, false) => FACE,
-        (true, true, true) => FACE_HOVER,
-        (true, false, false) => BUTTON,
-        (true, false, true) => BUTTON_HOVER,
+    let name = match (live, primary, hover) {
+        (false, _, _) => "horizon/settings/button_disabled",
+        (true, true, false) => "horizon/settings/button_primary",
+        (true, true, true) => "horizon/settings/button_primary_highlighted",
+        (true, false, false) => "horizon/settings/button",
+        (true, false, true) => "horizon/settings/button_highlighted",
     };
-    fill(batch, atlas, rect, face);
-    if hover && live {
-        ring(batch, atlas, rect, WHITE);
+    if !skinned(batch, atlas, name, rect) {
+        let face = match (live, primary, hover) {
+            (false, _, _) => WELL,
+            (true, true, false) => FACE,
+            (true, true, true) => FACE_HOVER,
+            (true, false, false) => BUTTON,
+            (true, false, true) => BUTTON_HOVER,
+        };
+        fill(batch, atlas, rect, face);
+        if hover && live {
+            ring(batch, atlas, rect, white());
+        }
     }
-    let color = if live { WHITE } else { MUTED };
+    let color = if live { white() } else { muted() };
     let ty = y + ((h - 8.0) / 2.0).floor();
     scrolling_label(batch, atlas, label, [x + 2.0, ty, w - 4.0], (y, h), color);
 }
@@ -234,6 +368,8 @@ fn scrolling_label(
     );
 }
 /// A slider: its value over a thin track filled in the accent up to the handle at `position`.
+/// A skin draws the track (`slider`) over the whole control, then the handle
+/// (`slider_handle`) over its 4 px knob at the value.
 pub fn slider(
     batch: &mut HudBatch,
     atlas: &HudAtlas,
@@ -243,7 +379,22 @@ pub fn slider(
     (hover, live): (bool, bool),
 ) {
     let [x, y, w, h] = rect;
-    let color = if live { WHITE } else { MUTED };
+    let line = y + h - 3.0;
+    let at = x + (position.clamp(0.0, 1.0) * (w - 4.0)).round();
+    let handle = [at, line - 3.0, 4.0, 8.0];
+    let (track_name, handle_name) = match (live, hover) {
+        (false, _) => (
+            "horizon/settings/slider_disabled",
+            "horizon/settings/slider_handle_disabled",
+        ),
+        (true, false) => ("horizon/settings/slider", "horizon/settings/slider_handle"),
+        (true, true) => (
+            "horizon/settings/slider_highlighted",
+            "horizon/settings/slider_handle_highlighted",
+        ),
+    };
+    let skin = skinned(batch, atlas, track_name, rect);
+    let color = if live { white() } else { muted() };
     scrolling_label(
         batch,
         atlas,
@@ -252,19 +403,19 @@ pub fn slider(
         (y, h),
         color,
     );
-    let line = y + h - 3.0;
-    let at = x + (position.clamp(0.0, 1.0) * (w - 4.0)).round();
+    if skin && skinned(batch, atlas, handle_name, handle) {
+        return;
+    }
     fill(batch, atlas, [x, line, w, 2.0], TRACK);
     fill(
         batch,
         atlas,
         [x, line, at - x, 2.0],
-        if live { ACCENT } else { MUTED },
+        if live { accent() } else { muted() },
     );
-    let handle = [at, line - 3.0, 4.0, 8.0];
-    fill(batch, atlas, handle, if live { HANDLE } else { MUTED });
+    fill(batch, atlas, handle, if live { HANDLE } else { muted() });
     if hover && live {
-        ring(batch, atlas, [at - 1.0, line - 4.0, 6.0, 10.0], ACCENT);
+        ring(batch, atlas, [at - 1.0, line - 4.0, 6.0, 10.0], accent());
     }
 }
 /// A value that a press steps through: in a well, between the arrows that say so.
@@ -276,18 +427,25 @@ pub fn cycler(
     (hover, live): (bool, bool),
 ) {
     let [x, y, w, h] = rect;
-    well(batch, atlas, rect);
-    if hover && live {
-        ring(batch, atlas, rect, WHITE);
+    let name = match (live, hover) {
+        (false, _) => "horizon/settings/cycler_disabled",
+        (true, false) => "horizon/settings/cycler",
+        (true, true) => "horizon/settings/cycler_highlighted",
+    };
+    if !skinned(batch, atlas, name, rect) {
+        fill(batch, atlas, rect, WELL);
+        if hover && live {
+            ring(batch, atlas, rect, white());
+        }
     }
     let ty = y + ((h - 8.0) / 2.0).floor();
-    let arrows = if hover && live { WHITE } else { MUTED };
+    let arrows = if hover && live { white() } else { muted() };
     batch.text_styled(atlas, &Text::literal("<"), x + 3.0, ty, arrows, true);
     batch.text_styled(atlas, &Text::literal(">"), x + w - 8.0, ty, arrows, true);
     let color = match (live, hover) {
-        (false, _) => MUTED,
-        (true, true) => WHITE,
-        (true, false) => SOFT,
+        (false, _) => muted(),
+        (true, true) => white(),
+        (true, false) => soft(),
     };
     scrolling_label(batch, atlas, value, [x + 9.0, ty, w - 18.0], (y, h), color);
 }
@@ -298,7 +456,12 @@ pub fn title(batch: &mut HudBatch, atlas: &HudAtlas, text: &Text) {
 }
 /// The cost's colour in the HUD's encoding: the square beside its name.
 pub fn cost_color(cost: Cost) -> u32 {
-    hex(cost.rgb(), 255)
+    match cost {
+        Cost::None => soft(),
+        Cost::Low | Cost::Saves => pick(hex(cost.rgb(), 255), |p| p.positive),
+        Cost::Medium => pick(hex(cost.rgb(), 255), |p| p.warning),
+        Cost::High => pick(hex(cost.rgb(), 255), |p| p.negative),
+    }
 }
 
 #[cfg(test)]

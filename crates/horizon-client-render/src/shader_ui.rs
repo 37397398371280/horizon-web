@@ -600,7 +600,7 @@ impl ShaderUi {
             let rect = [x + 2.0, y + 6.0, w - 4.0, 8.0];
             crate::widgets::record(&caption, rect, false);
             let caption = Text::literal(style::fit(atlas, &caption, w - 4.0));
-            batch.text_styled(atlas, &caption, rect[0], rect[1], style::MUTED, true);
+            batch.text_styled(atlas, &caption, rect[0], rect[1], style::muted(), true);
         }
         let focused = self.focus == Some(Target::Search);
         shell::search_field(&mut self.search, batch, atlas, &cols, cursor, focused);
@@ -686,10 +686,10 @@ impl ShaderUi {
             &Text::literal(name),
             x + 12.0,
             y + 8.0,
-            style::WHITE,
+            style::white(),
             true,
         );
-        shell::dock_note(batch, atlas, &cols, text, style::GREY);
+        shell::dock_note(batch, atlas, &cols, text, style::grey());
 
         let mut foot = vec![(cols.button(0), "gui.done", Target::Done, Declared::Done)];
         if Self::pending(s) {
