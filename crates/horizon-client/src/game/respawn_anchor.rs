@@ -142,6 +142,26 @@ impl Game<'_> {
     /// `RespawnAnchorBlock.useItemOn`'s test: `held` is glowstone
     /// (`isRespawnFuel`) and the block at `pos` is an anchor that takes another
     /// charge (`canBeCharged`).
+    /// Whether a main-hand use of the block at `pos` on a server sets off a charged respawn
+    /// anchor: `RespawnAnchorBlock.useWithoutItem` with charges where anchors don't set the
+    /// spawn (outside the Nether), so the server explodes it. Neither hand's glowstone charges
+    /// it first (`useItemOn`), and a sneak with something in hand doesn't skip the block
+    /// (`MultiPlayerGameMode.performUseItemOn`). For a mod predicting the explosion.
+    /// Client-side. API @API:incari_fast_crystal@.
+    pub(super) fn native_anchor_set_off(&self, pos: [i32; 3]) -> bool {
+        let state = self.world.block(pos[0], pos[1], pos[2]);
+        if self.remote.is_none() || !self.is_anchor(state) || self.anchor_works() {
+            return false;
+        }
+        let main = self.stack_in(self.selected);
+        let off = self.offhand.as_ref();
+        if self.remote_shift_down() && (main.is_some() || off.is_some()) {
+            return false;
+        }
+        let charges = self.anchor_charges(state);
+        let fuel = |s: Option<&ItemStack>| s.is_some_and(|s| &*s.item == "minecraft:glowstone");
+        charges > 0 && !(charges < 4 && (fuel(main) || fuel(off)))
+    }
     pub(super) fn anchor_takes(&self, pos: [i32; 3], held: Option<&ItemStack>) -> bool {
         let state = self.world.block(pos[0], pos[1], pos[2]);
         held.is_some_and(|s| &*s.item == "minecraft:glowstone")

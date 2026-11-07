@@ -251,6 +251,7 @@ mod native_item_fluids;
 mod native_level_refs;
 mod native_lifecycle;
 mod native_living_refs;
+mod native_predict;
 mod native_machines;
 mod native_menu_stacks;
 mod native_menus;

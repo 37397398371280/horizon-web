@@ -3386,6 +3386,24 @@ impl Game<'_> {
     pub(super) fn native_player_attacked(&mut self, entity: u32, kind: &str, pos: [f64; 3]) {
         let _ = (entity, kind, pos);
     }
+    /// The player attacked the object `entity` on a server (an end crystal,
+    /// a boat or minecart, a painting, an item frame, an armor stand): the
+    /// click that sent its attack, after it is sent. Only the server breaks
+    /// it; a mod may show that ahead of the server (`native_take_crystal`).
+    /// It only hears. Client-side. Bundles need "hooks":
+    /// @API:incari_fast_crystal@.
+    pub(super) fn native_object_attacked(&mut self, entity: u32) {
+        let _ = entity;
+    }
+    /// The player used the block at `pos` on a server, with the main hand
+    /// if `main_hand`: the click that sent its use as `sequence`, after it
+    /// is sent. A mod may show what the server will do ahead of it
+    /// (`native_predict_air`); the server's acknowledgement of `sequence`
+    /// settles it. It only hears. Client-side. Bundles need "hooks":
+    /// @API:incari_fast_crystal@.
+    pub(super) fn native_block_used(&mut self, pos: [i32; 3], main_hand: bool, sequence: i32) {
+        let _ = (pos, main_hand, sequence);
+    }
     /// The server says the mob `entity` of type `kind` at `pos` died
     /// (`EntityEvent` DEATH): its death animation starts. Any mob's, not
     /// only the player's victims: a mod keeps the ids it attacked. It only

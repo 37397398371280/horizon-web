@@ -1,0 +1,54 @@
+{
+  "hooks": [
+    {
+      "name": "object_attacked",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_object_attacked",
+      "side": "client",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
+    },
+    {
+      "name": "block_used",
+      "target": "horizon_client::game::native_hooks::Game<'_>::native_block_used",
+      "side": "client",
+      "cancellable": false,
+      "mod_api": {
+        "contract": "mixin"
+      }
+    }
+  ],
+  "helpers": [
+    {
+      "name": "take_crystal",
+      "target": "horizon_client::game::native_predict::Game<'_>::native_take_crystal"
+    },
+    {
+      "name": "return_crystal",
+      "target": "horizon_client::game::native_predict::Game<'_>::native_return_crystal"
+    },
+    {
+      "name": "latency",
+      "target": "horizon_client::game::native_predict::Game<'_>::native_latency"
+    },
+    {
+      "name": "attack_hurts",
+      "target": "horizon_client::game::native_predict::Game<'_>::native_attack_hurts"
+    },
+    {
+      "name": "predict_air",
+      "target": "horizon_client::game::native_predict::Game<'_>::native_predict_air"
+    },
+    {
+      "name": "anchor_set_off",
+      "target": "horizon_client::game::respawn_anchor::Game<'_>::native_anchor_set_off"
+    }
+  ],
+  "rust_summary": "client prediction for PvP client mods: the player's attack on a server's object (`native_object_attacked`) and use of a block (`native_block_used`, with its sequence), an end crystal taken off the client ahead of the server and put back if the server keeps it (`native_take_crystal`, `native_return_crystal`), the player's ping (`native_latency`), whether the player's hit does damage (`native_attack_hurts`), whether a use sets off a respawn anchor (`native_anchor_set_off`) and a block shown as air until the server acknowledges the use (`native_predict_air`).",
+  "doc_summary": "client prediction, as vanilla predicts a broken block: nothing is sent, and the server settles it. `native_object_attacked` hears the attack on a server's object (an end crystal, a boat, a painting...) after it is sent, `native_block_used` a block use with its sequence. `native_take_crystal` takes a crystal off the client and `native_return_crystal` puts it back if the server kept it (it's dropped when the server removes it); `native_latency` gives the player's ping; `native_attack_hurts` says whether the hit does damage; `native_anchor_set_off` whether a main-hand use explodes a charged respawn anchor; `native_predict_air` shows a block as air until the server acknowledges the use. Bundles need \"hooks\": @API:incari_fast_crystal@.",
+  "comments": [
+    "crates/horizon-client/src/game/native_predict.rs",
+    "crates/horizon-client/src/game/respawn_anchor.rs"
+  ]
+}

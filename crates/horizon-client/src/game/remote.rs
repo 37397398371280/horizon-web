@@ -580,6 +580,10 @@ pub(super) struct Remote {
     /// sequence its block updates only replace the remembered state; then the block
     /// takes it.
     predictions: HashMap<[i32; 3], Prediction>,
+    /// End crystals a mod took off this client ahead of the server (`native_take_crystal`),
+    /// to put back if the server keeps them; dropped when the server removes one and with the
+    /// level.
+    pub(super) taken_crystals: Vec<super::dragon::Crystal>,
     /// Open container: (window id, menu name).
     pub(super) menu: Option<(i32, String)>,
     /// The crafting result slot of the open menu as the server last set it
@@ -1132,6 +1136,7 @@ impl Game<'_> {
             level_load: horizon_client::level_loading::LevelLoadTracker::new(0),
             sent_info: info,
             predictions: HashMap::new(),
+            taken_crystals: Vec::new(),
             menu: None,
             craft_result: None,
             menu_title: None,
@@ -1364,7 +1369,7 @@ impl Game<'_> {
     /// `LocalPlayer.isShiftKeyDown` (and so `isSecondaryUseActive`): the input as of the player's
     /// last tick (`input.keyPresses`, what the last ServerboundPlayerInputPacket said), not the key
     /// now: a sneak pressed in the frame of a click acts from the next tick, as on the server.
-    fn remote_shift_down(&self) -> bool {
+    pub(super) fn remote_shift_down(&self) -> bool {
         self.remote
             .as_ref()
             .is_some_and(|r| r.last_input & SHIFT_INPUT != 0)
@@ -2317,6 +2322,7 @@ impl Game<'_> {
         // A replacement LocalPlayer has a fresh sendPosition baseline.
         r.position_sender = Default::default();
         r.predictions.clear();
+        r.taken_crystals.clear();
         self.set_mode_id(spawn.game_type);
         self.dim = Dim::from_id(&spawn.dimension);
         self.audio.set_world(&spawn.dimension);
@@ -3106,6 +3112,7 @@ impl Game<'_> {
             r.stepped.remove(&id);
             r.head_lerps.remove(&id);
             r.pending_items.remove(&id);
+            r.taken_crystals.retain(|c| c.id != id as u32);
         }
     }
     /// Map a menu slot to Horizon's inventory screen slot ids.
@@ -3370,6 +3377,7 @@ impl Game<'_> {
                     r.carried.set(Some(0));
                     // handleLogin makes a new ClientLevel: its predictions count from 0.
                     r.sequence = 0;
+                    r.taken_crystals.clear();
                     r.own_invisible = false;
                     r.own_on_fire = false;
                     r.online_mode = p.online_mode;
@@ -3447,6 +3455,7 @@ impl Game<'_> {
                     && r.level != p.spawn.dimension
                 {
                     r.sequence = 0;
+                    r.taken_crystals.clear();
                 }
                 self.enter_remote_dimension(&p.spawn, true, reason);
                 if dimension_changed {
@@ -8176,6 +8185,7 @@ impl Game<'_> {
             if spectator {
                 return true;
             }
+            self.native_block_used(hit.pos, hand == Hand::Main, seq);
             // Only a predicted placement (predict_place) marks a cell whose
             // resend plays a place sound: an empty hand or a non-block item
             // places nothing (BlockItem.place is where the sound comes from).
@@ -9355,6 +9365,7 @@ impl Game<'_> {
             // VehicleEntity.hurtServer, ItemFrame and ArmorStand hurtServer,
             // a painting broken or an EndCrystal hurtServer: the server decides.
             self.send(S::Attack(play::Attack { id: hit.id }));
+            self.native_object_attacked(hit.id as u32);
             self.reset_attack_strength();
         } else if let Some((i, distance, _)) = self.mob_hit()
             && self.before_block(distance)
